@@ -39,6 +39,7 @@ art_make(
             ${ROOT_GEOM}
             ${ROOT_XMLIO}
             ${ROOT_GDML}
+            ${ROOT_GENVECTOR}
 			${ROOT_FFTW}
 			${ROOT_BASIC_LIB_LIST}
 			${Boost_SYSTEM_LIBRARY}
