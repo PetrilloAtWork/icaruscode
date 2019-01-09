@@ -132,21 +132,45 @@ std::vector<raw::OpDetWaveform> icarus::opdet::PMTsimulationAlg::simulate
   std::vector<raw::OpDetWaveform> waveforms; // storage of the results
   
   Waveform_t waveform;
-  CreateFullWaveform(waveform, photons);
+  IngredientList_t ingredients = CreateFullWaveform(waveform, photons);
   CreateOpDetWaveforms(photons.OpChannel(), waveform, waveforms);
+  
+  // TODO
+  ProtoWaveform_t cookedWaveform = cookWaveform(ingredients);
+  
+  // TODO trigger simulation and electronics noise goes here
+  
+  std::vector<raw::OpDetWaveform> newWaveforms [[gnu::unused]]
+    = makeOpDetWaveforms(photons.OpChannel(), std::move(cookedWaveform));
+  
+  if (!waveforms.empty()) {
+    std::cout << "Regular flavour:" << std::endl;
+    std::cout << waveforms.front() << std::endl;
+  }
+  if (!newWaveforms.empty()) {
+    std::cout << "Fancy flavour:" << std::endl;
+    std::cout << newWaveforms.front() << std::endl;
+  }
+  
   return waveforms;
   
 } // icarus::opdet::PMTsimulationAlg::simulate()
 
 
 //------------------------------------------------------------------------------
-void icarus::opdet::PMTsimulationAlg::CreateFullWaveform(Waveform_t & waveform,
-					sim::SimPhotons const& photons){
+auto icarus::opdet::PMTsimulationAlg::CreateFullWaveform(Waveform_t & waveform,
+					sim::SimPhotons const& photons)
+  -> IngredientList_t
+{
     using util::quantities::tick;
     using namespace util::quantities::time_literals;
     
+    IngredientList_t ingredients; // all the components of this waveform
     waveform.resize(fNsamples,fParams.baseline);
     
+    //
+    // scintillation light
+    //
     // collect the amount of photoelectrons arriving at each tick
     std::unordered_map<tick,unsigned int> peMap;
     
@@ -177,6 +201,10 @@ void icarus::opdet::PMTsimulationAlg::CreateFullWaveform(Waveform_t & waveform,
     unsigned int nTotalPE [[gnu::unused]] = 0U; // unused if not in `debug` mode
     for(auto const& pe : peMap){
       auto const nPE = pe.second;
+      ingredients.push_back(
+        std::make_unique<details::Photoelectrons<ProtoWaveform_t>>
+          (wsp, pe.first, nPE)
+        );
       nTotalPE += nPE;
       if (nPE == 0) continue;
       if (nPE == 1) AddSPE(pe.first,waveform); // faster if n = 1
@@ -208,6 +236,8 @@ void icarus::opdet::PMTsimulationAlg::CreateFullWaveform(Waveform_t & waveform,
       end=std::chrono::high_resolution_clock::now(); diff = end-start;
       //std::cout << "\tadded saturation... " << photons.OpChannel() << " " << diff.count() << std::endl;
 
+    std::sort(ingredients.begin(), ingredients.end()); // by start time
+    return ingredients;
   } // CreateFullWaveform()
 
   std::set<size_t> icarus::opdet::PMTsimulationAlg::CreateBeamGateTriggers() const
@@ -356,6 +386,93 @@ void icarus::opdet::PMTsimulationAlg::CreateOpDetWaveforms(raw::Channel_t const&
     }
   }
   
+
+
+// -----------------------------------------------------------------------------   
+template <typename WF>
+void icarus::opdet::details::Photoelectrons<WF>::addToWaveform
+  (ProtoWaveform_t& wf) const
+{
+  if (fStartTime >= wf.size()) return;
+#if 0  
+  auto const min = fStartTime.value();
+  auto const max = std::min(min + fPEshape.pulseLength(), wf.size());
+  std::transform(
+    wf.cbegin() + min, // first argument ("a"): begin
+    wf.cbegin() + max, // first argument ("a"): end
+    fPEshape.begin(),      // second argument ("b"): begin
+    wf.begin() + min, // destination
+    [this](auto a, auto b) { return a + this->fNPE * b; }
+    );
+#else
+  // polarity note:
+  // * the shape of photoelectron already includes the polarity
+  // * the shape of photoelectron refers to a baseline of 0.0
+  // * `lar::sparse_vector` will combine the shape directly where an existing
+  //   signal already is
+  // * it will instead combine it with a plain baseline in the ticks where no
+  //   signal is present yet ("void cells" in `lar::sparse_vector` jargon)
+  // * here we DO NOT add baseline
+  wf.combine_range(
+    fStartTime.value(), // offset
+    fPEshape.begin(),   // data to be combined: begin
+    fPEshape.end(),     // data to be combined: end
+    [this](auto a, auto b) { return a + this->fNPE * b; } // combination op.
+    );
+#endif // 0
+  
+} // icarus::opdet::Photoelectrons<>::addToWaveform()
+
+
+// -----------------------------------------------------------------------------   
+auto icarus::opdet::PMTsimulationAlg::cookWaveform
+  (IngredientList_t const& ingredients) const
+  -> ProtoWaveform_t
+{
+  
+  ProtoWaveform_t waveforms(fNsamples);
+  
+  for (auto& ingredient: ingredients) {
+    ingredient->addToWaveform(waveforms);
+  }
+  
+  //
+  // add the baseline, do not disturb void areas
+  //
+  for (auto& range: waveforms.iterate_ranges()) {
+    for (auto& value: range) value += fParams.baseline;
+  } // for range index
+  
+  return waveforms;
+} // icarus::opdet::PMTsimulationAlg::cookWaveform()
+
+
+// -----------------------------------------------------------------------------   
+std::vector<raw::OpDetWaveform>
+icarus::opdet::PMTsimulationAlg::makeOpDetWaveforms
+  (raw::Channel_t const channel, ProtoWaveform_t&& proto) const
+{
+  std::vector<raw::OpDetWaveform> waveforms;
+  
+  while (proto.n_ranges()) {
+    auto regionInfo = proto.void_range(0U);
+    // TODO check what is here, write what is not
+    waveforms.emplace_back(
+      raw::TimeStamp_t
+        ((regionInfo.begin_index() / fSampling + fParams.triggerOffsetPMT)),
+      channel,
+      regionInfo.size()
+      );
+    assert(waveforms.back().empty());
+    // convert the floats into whatever `raw::OpDetWaveform` actually stores
+    std::copy(
+      regionInfo.cbegin(), regionInfo.cend(), 
+      std::back_inserter(waveforms.back())
+      );
+  } // while
+  
+  return waveforms;
+} // icarus::opdet::PMTsimulationAlg::makeOpDetWaveforms()
 
 
 // -----------------------------------------------------------------------------   

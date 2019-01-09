@@ -20,10 +20,11 @@
 #include "icaruscode/Utilities/quantities/electromagnetism.h" // picocoulomb
 
 // LArSoft libraries
-#include "lardataobj/RawData/OpDetWaveform.h"
-#include "lardataobj/Simulation/SimPhotons.h"
 #include "lardataalg/DetectorInfo/LArProperties.h"
 #include "lardataalg/DetectorInfo/DetectorClocks.h"
+#include "lardataobj/RawData/OpDetWaveform.h"
+#include "lardataobj/Simulation/SimPhotons.h"
+#include "lardataobj/Utilities/sparse_vector.h"
 
 // framework libraries
 #include "fhiclcpp/types/Atom.h"
@@ -46,8 +47,7 @@
 #include <cstdlib> // std::size_t
 
 
-namespace icarus {
-  namespace opdet {
+namespace icarus::opdet {
     
     // -------------------------------------------------------------------------
     /**
@@ -264,9 +264,106 @@ namespace icarus {
         gigahertz samplingFreq, double rightSigmas
         );
       
-    }; // class DiscretePhotoelectronPulse<>
+    }; // class DiscretePhotoelectronPulse
     
-
+  
+  // ---------------------------------------------------------------------------
+  namespace details {
+    
+    // -------------------------------------------------------------------------
+    /// Interface for objects adding something to a waveform.
+    template <typename WF>
+    class WaveformContribution {
+        public:
+      /// Type used internally for representing waveforms or pieces of them.
+      using ProtoWaveform_t = WF;
+      /// This (abstract) type.
+      using WaveformContribution_t = WaveformContribution<WF>;
+      
+      /// Type for waveform index.
+      using tick = util::quantities::tick;
+      
+      /// Destructor (virtual and defaulted).
+      virtual ~WaveformContribution() = default;
+      
+      /// Returns the time this contribution kicks in.
+      virtual tick time() const = 0;
+      
+      /// Adds a contribution to the specified waveform.
+      virtual void addToWaveform(ProtoWaveform_t& wf) const = 0;
+      
+      /// Returns a hash code of this object (based solely on time).
+      auto hash() const { return std::hash<tick::value_t>()(time()); }
+      
+      /// Sorts WaveformContribution objects by time.
+      bool operator< (WaveformContribution_t const& other) const
+        { return time() < other.time(); }
+      
+    }; // class WaveformContribution<>
+    
+    // @{
+    /// Sorts `WaveformContribution` objects by time.
+    template <typename WF>
+    bool operator<(
+      std::unique_ptr<WaveformContribution<WF>> const& a,
+      std::unique_ptr<WaveformContribution<WF>> const& b
+      )
+      { return *a < *b; }
+    // @}
+    
+    /**
+     * @brief Adds photoelectrons to the waveform, at specified times.
+     * 
+     * A number of photoelectrons is added at a specified tick.
+     * For speed and simplicity, all WaveformContribution<WF>photoelectrons share exactly the same shape
+     * and start at the exact beginning of the specified tick.
+     */
+    template <typename WF>
+    class Photoelectrons: public WaveformContribution<WF> {
+        public:
+      using ProtoWaveform_t
+        = typename WaveformContribution<WF>::ProtoWaveform_t;
+      using tick = typename WaveformContribution<WF>::tick;
+      
+      /**
+       * @brief Number of photoelectrons happening at the start of a tick.
+       * @param peShape reference waveform of the single photoelectron
+       * @param time the tick where the first sample of `peShape` is placed
+       * @param n number of photoelectrons _(default: `1`)_
+       */
+      Photoelectrons(
+        DiscretePhotoelectronPulse const& peShape,
+        tick time,
+        unsigned int n = 1U
+        )
+        : fPEshape(peShape)
+        , fStartTime(time)
+        , fNPE(n)
+        {}
+      
+      /// Returns the time this contribution kicks in.
+      virtual tick time() const override { return fStartTime; }
+      
+      /// Adds a contribution to the specified waveform.
+      virtual void addToWaveform(ProtoWaveform_t& wf) const override;
+      
+      /// Increments the number of contributed photoelectrons.
+      void addPE(unsigned int n = 1U) { fNPE += n; }
+      
+        private:
+      
+      /// Reference shape for one photoelectron.
+      DiscretePhotoelectronPulse const& fPEshape;
+      
+      tick fStartTime; ///< Start time.
+      unsigned int fNPE = 1U; ///< Number of photoelectrons at this time.
+      
+    }; // class Photoelectrons
+    
+    
+  } // namespace details
+  
+  
     // -------------------------------------------------------------------------
 
     /** ************************************************************************
@@ -459,6 +556,12 @@ namespace icarus {
       /// Type internally used for storing waveforms.
       using Waveform_t = std::vector<ADCcount>;
       
+      /// Type of waveform before readout zero suppression.
+      using ProtoWaveform_t = lar::sparse_vector<ADCcount>;
+      
+      using WaveformContribution_t
+        = details::WaveformContribution<ProtoWaveform_t>;
+      
       ConfigurationParameters_t fParams; ///< Complete algorithm configuration.
     
       double fQE;            ///< PMT quantum efficiency.
@@ -466,8 +569,11 @@ namespace icarus {
       std::size_t fNsamples; ///< Samples per waveform.
 
       DiscretePhotoelectronPulse wsp; /// Single photon pulse (sampled).
+      
+      using IngredientList_t
+        = std::vector<std::unique_ptr<WaveformContribution_t>>;
     
-    void CreateFullWaveform
+    IngredientList_t CreateFullWaveform
       (Waveform_t&, sim::SimPhotons const&);
     
     void CreateOpDetWaveforms(raw::Channel_t const& opch,
@@ -488,6 +594,16 @@ namespace icarus {
     
       /// Returns a random response whether a photon generates a photoelectron.
       bool KicksPhotoelectron() const;
+      
+      
+      /// Merges all the physics activity into a single waveform set.
+      ProtoWaveform_t cookWaveform(IngredientList_t const& ingredients) const;
+      
+      /// Extracts the ADC regions of interest into a fully featured set of
+      /// `raw::OpDetWaveform` objects.
+      std::vector<raw::OpDetWaveform> makeOpDetWaveforms
+        (raw::Channel_t channel, ProtoWaveform_t&& proto) const;
+      
     }; // class PMTsimulationAlg
     
     
@@ -656,8 +772,7 @@ namespace icarus {
     
     // -------------------------------------------------------------------------
     
-  } // namespace opdet
-} // namespace icarus
+} // namespace icarus::opdet
 
 
 //-----------------------------------------------------------------------------
