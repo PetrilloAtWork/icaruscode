@@ -28,6 +28,7 @@
 
 // framework libraries
 #include "fhiclcpp/types/Atom.h"
+#include "fhiclcpp/types/Table.h"
 #include "messagefacility/MessageLogger/MessageLogger.h"
 
 // CLHEP libraries
@@ -741,8 +742,15 @@ namespace icarus::opdet {
       }; // struct Config
       
       
-      /// Constructor.
+      using Parameters = fhicl::Table<Config>;
+      
+      
+      /// Constructor (from configuration structure).
       PMTsimulationAlgMaker(Config const& config); 
+      
+      /// Constructor (from configuration table).
+      PMTsimulationAlgMaker(Parameters const& config)
+        : PMTsimulationAlgMaker(config()) {}
       
       /**
        * @brief Creates and returns a new algorithm instance.

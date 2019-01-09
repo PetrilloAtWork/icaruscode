@@ -9,6 +9,7 @@
 
 // this library header
 #include "icaruscode/Light/Algorithms/PMTsimulationAlg.h"
+#include "lardataalg/Dumpers/RawData/OpDetWaveform.h" // OpDetWaveformDumper
 
 // framework libraries
 #include "cetlib_except/exception.h"
@@ -142,14 +143,18 @@ std::vector<raw::OpDetWaveform> icarus::opdet::PMTsimulationAlg::simulate
   
   std::vector<raw::OpDetWaveform> newWaveforms [[gnu::unused]]
     = makeOpDetWaveforms(photons.OpChannel(), std::move(cookedWaveform));
+
+  dump::raw::OpDetWaveformDumper dumper(0, 12);
+  dumper.setIndent("  ");
+  
   
   if (!waveforms.empty()) {
     std::cout << "Regular flavour:" << std::endl;
-    std::cout << waveforms.front() << std::endl;
+    dumper(std::cout, waveforms.front());
   }
   if (!newWaveforms.empty()) {
     std::cout << "Fancy flavour:" << std::endl;
-    std::cout << newWaveforms.front() << std::endl;
+    dumper(std::cout, newWaveforms.front());
   }
   
   return waveforms;
