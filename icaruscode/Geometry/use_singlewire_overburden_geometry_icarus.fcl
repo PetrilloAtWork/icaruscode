@@ -1,9 +1,13 @@
 # 
-# File:    use_overburden_geometry_icarus.fcl
-# Purpose: Configuration drop in to use the overburden'ed default geometry.
+# File:    use_singlewire_overburden_geometry_icarus.fcl
+# Purpose: Configuration drop in to use the single-wire overburden geometry.
 # Author:  Gianluca Petrillo (petrillo@slac.stanford.edu)
 # Date:    May 13, 2020
-# Version: 2.0
+# Version: 1.0
+# 
+# The geometry configuration chosen has 18 m ("single") first induction plane
+# wires and a 3-meter thick concrete overburden.
+# 
 # 
 # Usage
 # ======
@@ -13,30 +17,28 @@
 # The geometry service must have already been configured at that point, and
 # the file `geometry_icarus.fcl` must have already been included.
 # 
-# Example: transform `standard_g4_icarus.fcl` in a overburden version:
+# Example: transform `standard_g4_icarus.fcl` in a single wire overburden
+# version:
 #     
 #     #include "standard_g4_icarus.fcl"
 #     
 #     # turn to overburden geometry:
-#     #include "use_overburden_geometry_icarus.fcl"
+#     #include "use_singlewire_overburden_geometry_icarus.fcl"
 #     
 # 
 # Changes
 # --------
 # 
-# 20200219 (petrillo@slac.stanford.edu) [v1.0]
+# 20200513 (petrillo@slac.stanford.edu) [v1.0]
 # :   original version
-# 
-# 20200513 (petrillo@slac.stanford.edu) [v2.0]
-# :   selecting the default overburden geometry instead of the single wire one
 # 
 
 #
 # override the geometry configuration with the one
-# `icarus_overburden_geometry_services`
+# `icarus_single_induction_overburden_geometry_services`
 # defined in `geometry_icarus.fcl` (which must have been already included)
 # 
 services: {
   @table::services
-  @table::icarus_overburden_geometry_services
+  @table::icarus_single_induction_overburden_geometry_services
 } # services

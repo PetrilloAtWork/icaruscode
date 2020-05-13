@@ -32,10 +32,14 @@
 # Currently the following configurations are provided:
 #
 # * `icarus_geometry_services`: current default configuration
+#     * `icarus_overburden_geometry_services`:
+#         default detector configuration but with concrete overburden
+#     * `icarus_nooverburden_geometry_services`:
+#         default detector configuration but without concrete overburden
 # * geometry with 18 meter long wires on the first induction plane:
 #     * `icarus_single_induction_overburden_geometry_services`:
 #         detector with concrete overburden
-#     * `icarus_single_induction_no_overburden_geometry_services`:
+#     * `icarus_single_induction_nooverburden_geometry_services`:
 #         detector without concrete overburden
 #     * `icarus_single_induction_geometry_services`:
 #         the default geometry in this category
@@ -43,7 +47,7 @@
 #    TPCs:
 #     * `icarus_split_induction_overburden_geometry_services`:
 #         detector with concrete overburden
-#     * `icarus_split_induction_no_overburden_geometry_services`:
+#     * `icarus_split_induction_nooverburden_geometry_services`:
 #         detector without concrete overburden
 #     * `icarus_split_induction_geometry_services`: the default geometry in
 #         this category
@@ -346,7 +350,7 @@ icarus_split_induction_nooverburden_geometry_services: {
 ###
 ### Override a geometry configuration by:
 ###
-###     services: {icarus_legacy_services_v08_05_00
+###     services: {
 ###       @table::services
 ###       @table::icarus_split_induction_geometry_services
 ###     }
@@ -394,7 +398,7 @@ icarus_split_induction_geometry_services: @local::icarus_split_induction_nooverb
 # Geometry service configuration:
 #
 
-icarus_overburden_geometry_services: @local::icarus_single_induction_overburden_geometry_services
+icarus_overburden_geometry_services: @local::icarus_split_induction_overburden_geometry_services
 
 icarus_overburden_geometry: @local::icarus_overburden_geometry_services.Geometry
 
@@ -418,7 +422,7 @@ icarus_overburden_geometry: @local::icarus_overburden_geometry_services.Geometry
 # Geometry service configuration:
 #
 
-icarus_nooverburden_geometry_services: @local::icarus_single_induction_nooverburden_geometry_services
+icarus_nooverburden_geometry_services: @local::icarus_split_induction_nooverburden_geometry_services
 
 icarus_nooverburden_geometry: @local::icarus_nooverburden_geometry_services.Geometry
 

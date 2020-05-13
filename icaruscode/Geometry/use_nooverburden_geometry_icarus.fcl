@@ -1,9 +1,9 @@
 #
 # File:    use_nooverburden_geometry_icarus.fcl
-# Purpose: Configuration drop in to use the no-overburden geometry.
+# Purpose: Configuration drop in to use the default geometry with no overburden.
 # Author:  Gianluca Petrillo (petrillo@slac.stanford.edu)
-# Date:    February 19, 2020
-# Version: 1.0
+# Date:    May 13, 2020
+# Version: 2.0
 #
 # Usage
 # ======
@@ -13,25 +13,31 @@
 # The geometry service must have already been configured at that point, and
 # the file `geometry_icarus.fcl` must have already been included.
 #
-# Example: transform `standard_g4_icarus.fcl` in a no-overburden version:
+# Example: transform `standard_g4_icarus.fcl` in a overburden version:
 #
 #     #include "standard_g4_icarus.fcl"
 #
-#     # turn to no-overburden geometry:
-#     #include "use_nooverburden_geometry_icarus.fcl"
+#     # turn to overburden geometry:
+#     #include "use_overburden_geometry_icarus.fcl"
 #
 #
-# Changes:
+# Changes
+# --------
+# 
 # 20200219 (petrillo@slac.stanford.edu) [v1.0]
-#   original version
+# :   original version
+# 
+# 20200513 (petrillo@slac.stanford.edu) [v2.0]
+# :   selecting the default no-overburden geometry instead of the single wire
+#     one
 #
 
 #
 # override the geometry configuration with the one
-# `icarus_single_induction_nooverburden_geometry_services`
+# `icarus_nooverburden_geometry_services`
 # defined in `geometry_icarus.fcl` (which must have been already included)
 #
 services: {
   @table::services
-  @table::icarus_single_induction_nooverburden_geometry_services
+  @table::icarus_nooverburden_geometry_services
 } # services
