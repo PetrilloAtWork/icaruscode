@@ -1,6 +1,8 @@
 add_subdirectory(tools)
+add_subdirectory(Algorithms)
 
-art_make( MODULE_LIBRARIES larcorealg_Geometry
+art_make( EXCLUDE AnodeCathodeCrossingClusters_module.cc
+          MODULE_LIBRARIES larcorealg_Geometry
                            larcore_Geometry_Geometry_service
                            larsim_Simulation nug4_ParticleNavigation
                            lardataobj_Simulation
@@ -34,6 +36,21 @@ art_make( MODULE_LIBRARIES larcorealg_Geometry
                            ${ROOT_BASIC_LIB_LIST}
                            icaruscode_RecoUtils
         )
+
+simple_plugin(AnodeCathodeCrossingClusters module
+  icaruscode_Analysis_Algorithms
+  icaruscode_TPC_SignalProcessing_HitFinder
+  larreco_ClusterFinder
+  larreco_RecoAlg_ClusterRecoUtil
+  lardata_Utilities
+  larcore_Geometry_Geometry_service
+  lardataalg_DetectorInfo
+  larcorealg_Geometry
+  lardataobj_RecoBase
+  ${ART_FRAMEWORK_SERVICES_REGISTRY}
+  ${MF_MESSAGELOGGER}
+  ROOT::Core
+  )
 
 #install_headers()
 install_fhicl()

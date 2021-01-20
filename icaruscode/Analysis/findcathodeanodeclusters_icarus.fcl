@@ -1,0 +1,124 @@
+#
+# File:    findcathodeanodeclusters_icarus.fcl
+# Brief:   selects clusters going anode-to-cathode (or the other way around!)
+# Author:  Gianluca Petrillo (petrillo@slac.stanford.edu)
+# Date:    January 13, 2021
+# 
+# 
+# This job processes TPC raw waveforms (`raw::RawDigit`) to reconstruct hits and
+# clusters and to select the ones of them which cover from cathode to anode.
+# 
+# The process is designed to be fast, and aimed for purity rather than
+# efficiency.
+# 
+# 
+# Services configured
+# --------------------
+# 
+# The required set includes:
+# * art services (including message facility)
+# * Geometry
+# * LArPropertiesService, DetectorClocksService, DetectorPropertiesService
+# 
+# 
+# 
+# Input
+# ------
+#
+# The input file is expected to have been "decoded" and processed up to hit
+# finding.
+# This job configuration has been tested with ICARUS data processed by
+# `stage0_single_icarus.fcl` (v09_11_00).
+#
+#
+
+#include "services_common_icarus.fcl"
+# #include "calibrationservices_icarus.fcl"
+
+#include "rootoutput_icarus.fcl"
+#include "hitalgorithms.fcl"
+#include "clustermodules.fcl"
+
+
+# ------------------------------------------------------------------------------
+BEGIN_PROLOG
+
+icarus_findcathodeanodeclusters: {
+
+  module_type: AnodeCathodeCrossingClusters
+  
+  # input clusters
+  Clusters: [ dbscanclusterTPC0, dbscanclusterTPC1, dbscanclusterTPC2, dbscanclusterTPC3 ]
+  # Clusters: [ dbscancluster ]
+  
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  # algorithm parameters
+  
+  # only process clusters on planes #2 (that is collection planes)
+  OnlyPlanes: [ 2 ]
+  
+  MinHits:    30
+  MinWires:  100 # channels/wires
+  MinTicks: 1100 # ticks
+  
+  MaxHitClusterDistance:   3.0 # cm
+  
+  MinDriftDistance: 140.0 # cm
+  MaxDriftDistance: 170.0 # cm
+  
+  MinCloseHits:          100
+  
+  # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  
+
+} # findcathodeanodeclusters
+
+
+END_PROLOG
+
+
+# ------------------------------------------------------------------------------
+process_name: CrossCls
+
+
+services: {
+  
+                         @table::icarus_common_services
+  
+  RandomNumberGenerator: @erase
+  NuRandomService:       @erase
+  
+} # services
+
+
+# ------------------------------------------------------------------------------
+physics: {
+  
+  producers: {
+    
+    findcathodeanodeclusters: @local::icarus_findcathodeanodeclusters
+    
+  } # producers
+  
+  reco: [
+    findcathodeanodeclusters
+    ]
+  
+  output: [ rootoutput ]
+  
+} # physics
+
+
+# ------------------------------------------------------------------------------
+outputs: {
+  rootoutput: @local::icarus_rootoutput  # from rootoutput_icarus.fcl
+}
+
+
+# ------------------------------------------------------------------------------
+# --- overrides
+# ------------------------------------------------------------------------------
+outputs.rootoutput.dataTier: "reconstructed"
+
+# enable debug output
+services.message: @local::icarus_message_services_interactive_debug # from messages_icarus.fcl via services_common_icarus.fcl
