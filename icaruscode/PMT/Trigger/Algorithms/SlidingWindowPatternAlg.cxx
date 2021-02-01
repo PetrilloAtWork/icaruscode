@@ -1,10 +1,342 @@
 /**
- * @file   SlidingWindowTriggerEfficiencyPlots_module.cc
- * @brief  Plots of efficiency for triggers based on PMT channel sliding window.
+ * @file   icaruscode/PMT/Trigger/Algorithms/SlidingWindowPatternAlg.cxx
+ * @brief  Applies sliding window trigger patterns.
  * @author Gianluca Petrillo (petrillo@slac.stanford.edu)
- * @date   January 9, 2020
- * @see    icaruscode/PMT/Trigger/TriggerEfficiencyPlotsBase.h
+ * @date   January 29, 2021
+ * @see    icaruscode/PMT/Trigger/Algorithms/SlidingWindowPatternAlg.h
  */
+
+
+// library header
+#include "icaruscode/PMT/Trigger/Algorithms/SlidingWindowPatternAlg.h"
+
+// ICARUS libraries
+#include "icaruscode/PMT/Trigger/Algorithms/details/TriggerInfo_t.h"
+#include "sbnobj/ICARUS/PMT/Trigger/Data/MultiChannelOpticalTriggerGate.h"
+
+// LArSoft libraries
+#include "larcorealg/CoreUtils/enumerate.h"
+#include "larcorealg/CoreUtils/counter.h"
+
+// framework libraries
+#include "messagefacility/MessageLogger/MessageLogger.h"
+
+// C/C++ standard libraries
+#include <vector>
+#include <string>
+#include <cassert>
+
+/**
+ * 
+ * 
+ * This algorithm takes as input one trigger gate for each window.
+ * Each window is identified by an index, and the input gates are assigned one
+ * per window, in order.
+ * 
+ * The window mapping that defines the topology of the windows is passed to the
+ * algorithm.
+ * 
+ * 
+ * 
+ */
+class icarus::trigger::SlidingWindowPatternAlg {
+  
+  /// Record of the trigger response.
+  using TriggerInfo_t = icarus::trigger::details::TriggerInfo_t;
+  
+  /// Type of trigger gate extracted from the input event.
+  using InputTriggerGate_t = icarus::trigger::MultiChannelOpticalTriggerGate;
+  
+  /// A list of trigger gates from input.
+  using TriggerGates_t = std::vector<InputTriggerGate_t>;
+
+  /// Type of gate data without channel information.
+  using TriggerGateData_t = InputTriggerGate_t::GateData_t;
+  
+  /// Type holding information about composition and topology of all windows.
+  using WindowTopology_t = icarus::trigger::details::WindowChannelMap;
+  
+  /// Additional information on the trigger.
+  struct MoreInfo_t {
+    
+    /// Index of the window which led the trigger.
+    std::size_t windowIndex = std::numeric_limits<std::size_t>::max();
+    
+  }; // struct MoreInfo_t
+  
+  
+  /**
+   * @brief Constructor: configures window topology and times.
+   * @param windowTopology full composition and topology description of windows
+   * @param beamGate object applying the beam gate to trigger gates
+   * 
+   * Window topology can be computed with TODO
+   * 
+   * A beam gate application class can be constructed via
+   * `icarus::trigger::makeApplyBeamGate()` helper function.
+   * 
+   */
+  icarus::trigger::SlidingWindowPatternAlg(
+    WindowTopology_t windowTopology,
+    icarus::trigger::ApplyBeamGateClass beamGate
+    );
+  
+  /// Returns the trigger response from the specified `gates`.
+  std::pair<TriggerInfo_t, MoreInfo_t> simulateResponse
+    (TriggerGates_t const& gates) const;
+  
+
+  /// Returns a new collection of gates, set each in coincidence with beam gate.
+  TriggerGates_t applyBeamGate(TriggerGates_t const& gates) const;
+  
+  
+  
+  /// Data structure to communicate internally a trigger response.
+  struct WindowTriggerInfo_t {
+    
+    std::size_t windowIndex = std::numeric_limits<std::size_t>::max();
+    TriggerInfo_t info;
+    
+    bool fired() const { return info.fired(); }
+    
+    operator bool() const { return bool(info); }
+    bool operator! () const { return !info; }
+    
+    void emplace(std::size_t index, TriggerInfo_t info)
+      { windowIndex = index; this->info = std::move(info); }
+    
+  }; // WindowTriggerInfo_t
+  
+  /// Definition of the neighborhood of each window in terms of window indices.
+  WindowTopology_t const fWindowTopology;
+  
+  
+  /// Time interval when to evaluate the trigger.
+  icarus::trigger::ApplyBeamGateClass const fBeamGate;
+  
+  std::string const fLogCategory; ///< Message category tag.
+  
+  /**
+   * @brief Chceks `gates` are compatible with the current window configuration.
+   * @param gates the combined sliding window trigger gates, per cryostat
+   * @throw cet::exception (category: `SlidingWindowTriggerEfficiencyPlots`)
+   *        or derived, if an incompatibility is found
+   * 
+   * The method verifies that the current channel mapping is compatible with the
+   * gates.
+   * 
+   * This currently means that the `gates` are in the expected order and have
+   * the expected channel content.
+   */
+  void verifyInputTopology(TriggerGates_t const& gates) const;
+  
+}; // class icarus::trigger::SlidingWindowPatternAlg
+
+
+
+//------------------------------------------------------------------------------
+icarus::trigger::SlidingWindowPatternAlg::icarus::trigger::SlidingWindowPatternAlg(
+  WindowTopology_t windowTopology,
+  icarus::trigger::ApplyBeamGateClass beamGate,
+  std::string logCategory /* = "icarus::trigger::SlidingWindowPatternAlg" */
+  )
+  : fWindowTopology(std::move(windowTopology))
+  , fBeamGate(std::move(beamGate))
+  , fLogCategory(std::move(logCategory))
+  {}
+
+
+//------------------------------------------------------------------------------
+auto icarus::trigger::SlidingWindowPatternAlg::simulateResponse(TriggerGates_t const& gates) const
+  -> std::pair<TriggerInfo_t, MoreInfo_t>
+{
+  
+  // ensures input gates are in the same order as the configured windows
+  verifyInputTopology(gates);
+  
+  auto const inBeamGates = fBeamGate.applyToAll(gates);
+  
+  TriggerInfo_t triggerInfo;
+  
+  //
+  // 2.   apply pattern:
+  //
+  std::size_t const nWindows = fWindowTopology->nWindows();
+    
+  //
+  // 2.1.   for each main window, apply the pattern
+  //
+  WindowTriggerInfo_t triggerInfo; // start empty
+  for (std::size_t const iWindow: util::counter(nWindows)) {
+    
+    TriggerInfo_t const windowResponse
+      = applyWindowPattern(fPattern, iWindow, inBeamGates);
+    
+    if (!windowResponse) continue;
+    
+    mf::LogTrace(fLogCategory)
+      << "Pattern fired on window #" << iWindow
+      << " (threshold: " << threshold
+      << ") at tick " << windowResponse.atTick() /* << " ("
+      << detinfo::DetectorTimings(clockData).toElectronicsTime
+        (detinfo::DetectorTimings::optical_tick{ windowResponse.atTick() })
+      << ")" */
+      ;
+    
+    //
+    // 2.2. pick the main window with the earliest successful response, if any;
+    //      that defines location and time of the trigger
+    //
+    if (!triggerInfo || triggerInfo.info.atTick() > windowResponse.atTick())
+      triggerInfo.emplace(iWindow, windowResponse);
+    
+  } // main window choice
+  
+  return { std::move(triggerInfo.info), MoreInfo_t{ triggerInfo.windowIndex } };
+} // icarus::trigger::SlidingWindowPatternAlg::simulateResponse()
+
+
+//------------------------------------------------------------------------------
+void icarus::trigger::SlidingWindowPatternAlg::verifyInputTopology(TriggerGates_t const& gates) const {
+  /*
+   * Verifies that the `gates` are in the expected order and have
+   * the expected channel content.
+   */
+
+  std::string errorMsg; // if this stays `empty()` there is no error
+  for (auto const& [ iWindow, gate ]: util::enumerate(gates)) {
+    
+    std::string windowError; // if this stays `empty()` there is no error
+    
+    // more input gates than windows?
+    if (iWindow >= fWindowTopology->nWindows()) {
+      windowError = "unexpected input gate #" + std::to_string(iWindow) + " (";
+      for (raw::Channel_t const channel: gate.channels())
+        windowError += " " + std::to_string(channel);
+      windowError += " )";
+      errorMsg += windowError + '\n';
+      continue; // we collect info of all spurious gates
+    }
+    
+    details::WindowChannelMap::WindowInfo const& windowInfo
+      = fWindowTopology->info(iWindow);
+    
+    auto const channelInWindow
+      = [begin=windowInfo.channels.cbegin(),end=windowInfo.channels.cend()]
+      (raw::Channel_t channel)
+      { return std::binary_search(begin, end, channel); }
+      ;
+    
+    for (raw::Channel_t const channel: gate.channels()) {
+      if (channelInWindow(channel)) continue;
+      if (windowError.empty()) {
+        windowError =
+          "channels not in window #" + std::to_string(windowInfo.index)
+          + ":";
+      } // if first error
+      windowError += " " + std::to_string(channel);
+    } // for all channels in gate
+    
+    if (!windowError.empty()) errorMsg += windowError + '\n';
+  } // for gates
+
+  // more input gates than windows?
+  if (fWindowTopology->nWindows() > size(gates)) {
+    errorMsg +=
+      "Not enough input gates: " + std::to_string(size(gates)) + " gates for "
+      + std::to_string(fWindowTopology->nWindows()) + " windows\n";
+  }
+  
+  if (errorMsg.empty()) return;
+  
+  // put together the exception message and throw it.
+  cet::exception e("SlidingWindowTriggerEfficiencyPlots");
+  e << "Some channels from trigger gates do not match"
+    " the configured window allocation:\n"
+    << errorMsg
+    << "\n" // empty line
+    << "Window configuration: ";
+  fWindowTopology->dump(e, "  ");
+  throw e;
+  
+} // icarus::trigger::SlidingWindowPatternAlg::verifyInputTopology()
+
+
+//------------------------------------------------------------------------------
+auto icarus::trigger::SlidingWindowPatternAlg::applyWindowPattern(
+  WindowPattern const& pattern, std::size_t iWindow, TriggerGates_t const& gates
+  ) const -> TriggerInfo_t
+{
+  
+  /*
+   * 1. check that the pattern can be applied; if not, return no trigger
+   * 2. discriminate all the relevant gates against their required minimum count
+   * 3. combine them in AND
+   * 4. find the trigger time, fill the trigger information accordingly
+   */
+  details::WindowChannelMap::WindowInfo const& windowInfo
+    = fWindowTopology->info(iWindow);
+  assert(windowInfo.index == iWindow);
+  assert(windowInfo.hasOppositeWindow());
+  
+  TriggerInfo_t res; // no trigger by default
+  assert(!res);
+
+  //
+  // 1. check that the pattern can be applied; if not, return no trigger
+  //
+  
+  // check that the pattern centered into iWindow has all it needs:
+  if (pattern.requireUpstreamWindow && !windowInfo.hasUpstreamWindow())
+    return res;
+  if (pattern.requireDownstreamWindow && !windowInfo.hasDownstreamWindow())
+    return res;
+  
+  
+  //
+  // 2. discriminate all the relevant gates against their required minimum count
+  // 3. combine them in AND
+  //
+  
+  // main window
+  TriggerGateData_t trigPrimitive
+    = discriminate(gates[windowInfo.index], pattern.minInMainWindow);
+  
+  // add opposite window requirement (if any)
+  if ((pattern.minInOppositeWindow > 0U) && windowInfo.hasOppositeWindow()) {
+    trigPrimitive.Mul
+      (discriminate(gates[windowInfo.opposite], pattern.minInOppositeWindow));
+  } // if
+  
+  // add upstream window requirement (if any)
+  if ((pattern.minInUpstreamWindow > 0U) && windowInfo.hasUpstreamWindow()) {
+    trigPrimitive.Mul
+      (discriminate(gates[windowInfo.upstream], pattern.minInUpstreamWindow));
+  } // if
+  
+  // add downstream window requirement (if any)
+  if ((pattern.minInDownstreamWindow > 0U) && windowInfo.hasDownstreamWindow())
+  {
+    trigPrimitive.Mul(
+      discriminate(gates[windowInfo.downstream], pattern.minInDownstreamWindow)
+      );
+  } // if
+  
+  //
+  // 4. find the trigger time, fill the trigger information accordingly
+  //
+  auto const trigTick = trigPrimitive.findOpen(); // first trigger
+  if (trigTick != trigPrimitive.MaxTick) {
+    res.emplace(detinfo::timescales::optical_tick{ trigTick });
+    assert(res);
+  }
+  
+  return res;
+  
+} // icarus::trigger::SlidingWindowTriggerEfficiencyPlots::applyWindowPattern()
+
+
+#if 0
 
 
 // ICARUS libraries
@@ -1668,7 +2000,4 @@ auto icarus::trigger::SlidingWindowTriggerEfficiencyPlots::makeWindowPatterns
 
 
 //------------------------------------------------------------------------------
-DEFINE_ART_MODULE(icarus::trigger::SlidingWindowTriggerEfficiencyPlots)
-
-
-//------------------------------------------------------------------------------
+#endif // 0
