@@ -1,0 +1,31 @@
+#
+# File:    prodcorsika_genie_protononly_icarus_nue.fcl
+# Purpose: Generation of interactions of electron neutrinos from BNB and cosmic rays.
+# Author:  Gianluca Petrillo (petrillo@slac.standard.edu)
+# Date:    March 17, 2021
+#
+# This job configuration generates events with the same configuration 
+# as `prodcorsika_genie_protononly_icarus.fcl`, but it limits the generation
+# of neutrinos to the electron flavours.
+# 
+# Output
+# -------
+# 
+# See `prodcorsika_genie_protononly_icarus.fcl`.
+# The main output is an _art_ ROOT file with content:
+#  * `generator`: neutrino interaction(s) from GENIE
+#                 (with flux, GENIE truth and beam gate information)
+#  * `cosmgen`:   generated cosmic rays from CORSIKA
+# 
+
+#include "prodcorsika_genie_protononly_icarus.fcl"
+
+physics.producers.generator.GenFlavors: [ 12, -12 ]
+
+#
+# output file names
+#
+
+services.TFileService.fileName: "Supplemental-prodcorsika_genie_protononly_icarus_nue_%tc-%p.root"
+outputs.out1.fileName:    "prodcorsika_genie_protononly_icarus_nue_%tc-%p.root"
+
