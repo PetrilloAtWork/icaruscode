@@ -20,7 +20,7 @@
 // LArSoft libraries
 #include "larcore/Geometry/Geometry.h"
 #include "larcore/CoreUtils/ServiceUtil.h" // lar::providerFrom()
-#include "lardataalg/MCDumpers/MCDumperUtils.h" // sim::TruthXXXName()
+#include "lardataalg/MCDumpers/MCDumperUtils.h" // sim::TruthXXXName(), ...
 #include "larcorealg/Geometry/GeometryCore.h"
 #include "larcorealg/Geometry/ROOTGeometryNavigator.h"
 #include "larcorealg/Geometry/GeoNodePath.h"
@@ -29,6 +29,7 @@
 #include "larcorealg/Geometry/BoxBoundedGeo.h"
 #include "larcorealg/CoreUtils/StdUtils.h" // util::begin(), util::end()
 #include "larcorealg/CoreUtils/enumerate.h"
+#include "larcorealg/CoreUtils/counter.h"
 #include "larcoreobj/SimpleTypesAndConstants/geo_vectors.h" // geo::Point_t
 
 // nutools libraries
@@ -48,7 +49,12 @@
 #include "fhiclcpp/types/Atom.h"
 #include "messagefacility/MessageLogger/MessageLogger.h"
 
+// ROOT libraries
+#include "TDatabasePDG.h"
+#include "TParticlePDG.h"
+
 // C++ standard libraries
+#include <ostream>
 #include <regex>
 #include <algorithm> // std::sort(), std::binary_search()
 #include <vector>
@@ -56,11 +62,39 @@
 #include <atomic>
 #include <utility> // std::move()
 #include <cmath> // std::abs()
+#include <cassert>
+
+
+// -----------------------------------------------------------------------------
+namespace icarus::simfilter::details {
+
+  /// A particle, defined by its belonging to one of the specified flavors.
+  struct InteractingParticle_t {
+    std::vector<int> flavors; ///< List of flavors as PDG ID.
+    auto begin() const noexcept { return flavors.begin(); }
+    auto end() const noexcept { return flavors.end(); }
+  }; // InteractingParticle_t
+
+  std::ostream& operator<< (std::ostream& out, InteractingParticle_t const&);
+
+  /// An interaction between particles.
+  struct InteractionComposition_t {
+    using Particles_t = std::vector<InteractingParticle_t>;
+    /// List of particles involved in the interaction.
+    Particles_t particles;
+    auto begin() const noexcept { return particles.begin(); }
+    auto end() const noexcept { return particles.end(); }
+    std::size_t size() const noexcept { return particles.size(); }
+    bool empty() const noexcept { return particles.empty(); }
+  }; // InteractionComposition_t
+
+  std::ostream& operator<< (std::ostream& out, InteractionComposition_t const&);
+  
+} // namespace icarus::simfilter::details
 
 
 // -----------------------------------------------------------------------------
 namespace icarus::simfilter { class FilterNeutrinosActiveVolume; }
-
 
 /**
  * @brief Accepts only neutrino-like events with vertices in a specified volume.
@@ -120,6 +154,35 @@ namespace icarus::simfilter { class FilterNeutrinosActiveVolume; }
  * * `weakCurrent` (`CC` or `NC`, optional): if specified, interactions
  *   qualify only if they are tagged as charged or neutral currents;
  *   see `icarus::WeakCurrentTypes::parse()`;
+ * * `initialState` (list of particle configurations, default: any):
+ *   consider only interactions with a composition matching one of the ones
+ *   listed here; this parameter is a list of configurations: only if an
+ *   interaction does not match _any_ of the configurations, it is excluded;
+ *   a configuration is a list of interacting particles, and each interacting
+ *   particle is defined by a list of particle identifier (PDG ID). Therefore,
+ *   this parameter is effectively a triply nested collection; for example:
+ *       
+ *       initialState: [
+ *         [ # first accepted process:
+ *           [ "nu_e", "nu_mu" ], # either a muon or an electron neutrino
+ *           [ "e-" ]             # and an electron
+ *         ],
+ *         [ # second accepted process:
+ *           [ "nu_e_bar", "nu_mu_bar" ], # either a muon or an electron antineutrino
+ *           [ 1000180400 ]               # and a 40Ar nucleus
+ *         ],
+ *         [
+ *           [ "nu_Re", "nu_Rmu", "nu_Re_bar", "nu_Rmu_bar" ] # any right-handed neutrino
+ *         ]
+ *       ] # initialState
+ *       
+ *   will accept only interactions of neutrinos with electrons and antineutrinos
+ *   with argon nuclei, or any right-handed neutrino whatever it hits. Particle
+ *   names are parsed via ROOT (`TDatabasePDG`). Warnings are emitted if a
+ *   _particle ID_ is not known to ROOT; using a _name_ that is not known to
+ *   ROOT, instead, is a configuration error.
+ *   The initial particles in an event are defined by their status code `0` (see
+ *   also `sim::ParticleStatusName()`).
  * * `logCategory` (string, default: `FilterNeutrinosActiveVolume`): name of the
  *   category this module uses to send messages to the message facility.
  * 
@@ -159,7 +222,7 @@ namespace icarus::simfilter { class FilterNeutrinosActiveVolume; }
  * 
  */
 class icarus::simfilter::FilterNeutrinosActiveVolume: public art::EDFilter {
-
+  
   public:
     
     /// Configuration of box volume geometry.
@@ -225,6 +288,16 @@ class icarus::simfilter::FilterNeutrinosActiveVolume: public art::EDFilter {
         std::vector<int>{}
         };
       
+      fhicl::Sequence<fhicl::Sequence<fhicl::Sequence<std::string>>> initialState {
+        Name("initialState"),
+        Comment("list of accepted initial states; each entry is an interaction,"
+          " as a list of interacting particles; each interacting particle is"
+          " a list of particle types, as a PDG ID or particle name; if empty"
+          " (default), no requirement on initial state particle flavour is made"
+          ),
+        std::vector<std::vector<std::vector<std::string>>>{}
+        };
+      
       fhicl::Atom<std::string> weakCurrent {
         Name("weakCurrent"),
         Comment(
@@ -263,6 +336,9 @@ class icarus::simfilter::FilterNeutrinosActiveVolume: public art::EDFilter {
     /// List of qualifying interaction types.
     std::vector<int> const fInteractions;
     
+    /// Allowed initial states.
+    std::vector<details::InteractionComposition_t> const fInitialStates;
+    
     icarus::WeakCurrentType const fWeakCurrentType; ///< Selected weak current.
     
     std::string const fLogCategory; ///< Category name for the output stream.
@@ -294,17 +370,44 @@ class icarus::simfilter::FilterNeutrinosActiveVolume: public art::EDFilter {
     /// Returns whether the interaction type is qualifying.
     bool qualifyingInteractionType(int const interactionType) const;
 
+    /// Returns whether the initial state particles qualify.
+    bool qualifyingInitialState(std::vector<int> const& initialState) const;
+
     /// Returns whether the weak current type is qualifying.
     bool qualifyingWeakCurrent(int const CCNC) const;
     
     /// Returns whether the location is among the accepted ones.
     bool qualifyingLocation(geo::Point_t const& location) const;
     
-    
+    /// Returns whether `initialState` is compatible with `interaction`.
+    bool interactionMatches(
+      details::InteractionComposition_t const& interaction,
+      std::vector<int> const& initialState
+      ) const;
+
     /// Returns a sorted copy of the specified collection.
     template <typename Coll>
     static Coll sorted(Coll const& coll);
     
+    /// Converts `initialState` parameter value into a list of interactions.
+    static std::vector<details::InteractionComposition_t> parseInitialState
+      (std::vector<std::vector<std::vector<std::string>>> const& interSpecs);
+    
+    
+    /// Converts an interaction from configuration into an object.
+    static details::InteractionComposition_t parseInteraction
+      (std::vector<std::vector<std::string>> const& interSpec);
+    
+    /// Converts an interacting particle from configuration into an object.
+    static details::InteractingParticle_t parseInteractingParticle
+      (std::vector<std::string> const& partSpec);
+
+    /// Returns the PDG ID of a particle with the specified name... or ID.
+    static int parseParticleID(std::string const& IDstr);
+
+    /// Returns all PDG ID of initial state particles in `truth` (status `0`).
+    static std::vector<int> extractInitialStateParticles
+      (simb::MCTruth const& truth);
     
 }; // icarus::simfilter::FilterNeutrinosActiveVolume
 
@@ -313,10 +416,160 @@ class icarus::simfilter::FilterNeutrinosActiveVolume: public art::EDFilter {
 // -----------------------------------------------------------------------------
 // ---  Implementation
 // -----------------------------------------------------------------------------
+std::ostream& icarus::simfilter::details::operator<<
+  (std::ostream& out, InteractingParticle_t const& particle)
+{
+  auto const& flavors = particle.flavors;
+  if (flavors.size() == 1) {
+    out << sim::ParticleName(flavors.front());
+  }
+  else {
+    auto iFlav = begin(flavors);
+    auto const fend = end(flavors);
+    out << "{";
+    if (iFlav != fend) out << " " << sim::ParticleName(*(iFlav++));
+    while (iFlav != fend) out << " / " << sim::ParticleName(*(iFlav++));
+    out << " }";
+  }
+  return out;
+} // operator<< (InteractingParticle_t)
+
+
+// -----------------------------------------------------------------------------
+std::ostream& icarus::simfilter::details::operator<<
+  (std::ostream& out, InteractionComposition_t const& interaction)
+{
+  auto const& particles = interaction.particles;
+  if (particles.empty()) out << "any";
+  else {
+    auto iPart = begin(particles);
+    auto const pend = end(particles);
+    out << *iPart;
+    while (++iPart != pend) out << " + " << *iPart;
+  }
+  return out;
+} // operator<< (InteractionComposition_t)
+
+
+// -----------------------------------------------------------------------------
+namespace icarus::simfilter::details { class InteractionMatcher; }
+
+/// One-shot algorithm to match interaction specification to an initial state.
+class icarus::simfilter::details::InteractionMatcher {
+  
+    private:
+  
+  static constexpr int NoParticle = std::numeric_limits<int>::min();
+  
+  /// Status of the current matching.
+  struct MatchStatus {
+    
+    /// On creation, assigns a particle match; on destruction, releases it.
+    struct Assigner {
+      
+      MatchStatus& matchStatus; ///< Global status of the match.
+      
+      /// Matched initial state particle.
+      int particle = NoParticle;
+      int& target; ///< Slot of matched initial state particle.
+      
+      Assigner(int& part, MatchStatus& status) noexcept
+        : matchStatus(status), target(part)
+        {
+          std::swap(target, particle);
+          matchStatus.matched.push_back(particle);
+        }
+      
+      ~Assigner()
+        {
+          assert(!matchStatus.matched.empty());
+          assert(matchStatus.matched.back() == particle);
+          matchStatus.matched.pop_back();
+          std::swap(particle, target);
+        }
+      
+    }; // Assigner
+    
+    /// List of available initial state particles. Size is fixed.
+    std::vector<int> available;
+    /// List of matched initial state particles, in matched order.
+    std::vector<int> matched;
+    
+    MatchStatus(std::vector<int> initialState)
+      : available(std::move(initialState))
+      {}
+    
+    Assigner assign [[nodiscard]] (int& particle)
+      { return Assigner{ particle, *this }; }
+    
+    bool completeMatch() const noexcept
+      { return matched.size() == available.size(); }
+    
+  }; // struct MatchStatus
+  
+  
+  MatchStatus matchStatus; ///< Status of the current matching.
+  
+    public:
+  using InitialState_t = std::vector<int>; ///< List of particle flavours.
+  
+  InteractionMatcher(InitialState_t initialState)
+    : matchStatus(std::move(initialState))
+    {}
+  
+  bool match(InteractionComposition_t const& interaction)
+    {
+      return interaction.empty()
+        ? true: matchRemaining(interaction.begin(), interaction.end());
+    }
+  bool operator() (InteractionComposition_t const& interaction)
+    { return match(interaction); }
+  
+    private:
+  using ParticleIter_t = InteractionComposition_t::Particles_t::const_iterator;
+  
+  /// Match all remaining initial state particles (recursive).
+  bool matchRemaining(ParticleIter_t begin, ParticleIter_t end)
+    {
+      assert(begin != end);
+      
+      // here we try to match this one
+      InteractingParticle_t const& targetParticle = *begin;
+      for (int& particle: matchStatus.available) {
+        if (particle == NoParticle) continue; // not available any more
+        if (!particleFlavourMatches(targetParticle, particle)) continue;
+        
+        // we matched this role!
+        // let's assign the matched role and remove it from the available ones
+        auto const assigned = matchStatus.assign(particle); // this is a guard
+        auto const next = std::next(begin);
+        if (next == end) return true; // happy ending
+        
+        // try to match the rest of the particles now
+        if (matchRemaining(next, end)) return true;
+        
+      } // for all available particles
+      return false;
+    } // matchRemaining()
+  
+  static bool particleFlavourMatches
+    (InteractingParticle_t const& particle, int flavor)
+    {
+      auto const& flavors = particle.flavors;
+      return std::find(begin(flavors), end(flavors), flavor) != end(flavors);
+    }
+  
+}; // class icarus::simfilter::details::InteractionMatcher
+
+
+// -----------------------------------------------------------------------------
+// ---  icarus::simfilter::FilterNeutrinosActiveVolume
+// -----------------------------------------------------------------------------
 icarus::simfilter::FilterNeutrinosActiveVolume::FilterNeutrinosActiveVolume
   (Parameters const& config)
   : art::EDFilter(config)
   , fInteractions(sorted(config().interactionTypes()))
+  , fInitialStates(parseInitialState(config().initialState()))
   , fWeakCurrentType(config().weakCurrent())
   , fLogCategory(config().logCategory())
 {
@@ -331,6 +584,13 @@ icarus::simfilter::FilterNeutrinosActiveVolume::FilterNeutrinosActiveVolume
         << " interaction types:";
       for (int intType: fInteractions)
         log << "\n    - " << sim::TruthInteractionTypeName(intType);
+    } // if
+    
+    if (!fInitialStates.empty()) {
+      log << "\n * required one of " << fInitialStates.size()
+        << " initial state categories:";
+      for (details::InteractionComposition_t const& interaction: fInitialStates)
+        log << "\n     * " << interaction;
     } // if
     
     log << "\n * weak current type: " << std::string(fWeakCurrentType);
@@ -354,11 +614,13 @@ icarus::simfilter::FilterNeutrinosActiveVolume::FilterNeutrinosActiveVolume
   //
   if (fVolumes.empty()
     && fInteractions.empty()
+    && fInitialStates.empty()
     && (fWeakCurrentType == icarus::AnyWeakCurrentType)
   ) {
     
     throw art::Exception(art::errors::Configuration)
-      << "No filtering action specified (volume, current nor interaction type).\n"
+      << "No filtering action specified"
+        " (volume, current, initial state nor interaction type).\n"
       ;
     
   } // if no filter
@@ -613,6 +875,12 @@ bool icarus::simfilter::FilterNeutrinosActiveVolume::qualifying
   if (!fVolumes.empty() && !qualifyingLocation({ nu.Vx(), nu.Vy(), nu.Vz() }))
     return false;
   
+  //
+  // initial state
+  //
+  if (!fInitialStates.empty() && !qualifyingInitialState(extractInitialStateParticles(truth)))
+    return false;
+  
   // success, after all
   return true;
   
@@ -634,6 +902,23 @@ bool icarus::simfilter::FilterNeutrinosActiveVolume::qualifyingInteractionType
   return pass;
   
 } // icarus::simfilter::FilterNeutrinosActiveVolume::qualifyingInteractionType()
+
+
+// -----------------------------------------------------------------------------
+bool icarus::simfilter::FilterNeutrinosActiveVolume::qualifyingInitialState
+  (std::vector<int> const& initialState) const
+{
+  {
+    mf::LogTrace log(fLogCategory);
+    log << "Initial state: " << initialState.size() << " particles:";
+    for (int const part: initialState) log << " " << sim::ParticleName(part);
+  }
+  for (details::InteractionComposition_t const& interaction: fInitialStates)
+    if (interactionMatches(interaction, initialState)) return true;
+  
+  return false;
+  
+} // icarus::simfilter::FilterNeutrinosActiveVolume::qualifyingInitialState()
 
 
 // -----------------------------------------------------------------------------
@@ -684,6 +969,32 @@ bool icarus::simfilter::FilterNeutrinosActiveVolume::qualifyingLocation
 
 
 // -----------------------------------------------------------------------------
+bool icarus::simfilter::FilterNeutrinosActiveVolume::interactionMatches(
+  details::InteractionComposition_t const& interaction,
+  std::vector<int> const& initialState
+) const {
+  
+  mf::LogTrace log(fLogCategory);
+  log << "  - initial state " << interaction << "?";
+  
+  // sanity checks first:
+  if (interaction.empty()) {
+    log << " yes (no constraint)"; // ??
+    return false;
+  }
+  if (interaction.size() > initialState.size()) {
+    log << " no: not enough particles";
+    return false;
+  }
+  
+  bool const matched = details::InteractionMatcher{ initialState }(interaction);
+  log << " => :-" << (matched? ')': '(');
+  return matched;
+  
+} // icarus::simfilter::FilterNeutrinosActiveVolume::interactionMatches()
+
+
+// -----------------------------------------------------------------------------
 template <typename Coll>
 Coll icarus::simfilter::FilterNeutrinosActiveVolume::sorted(Coll const& coll) {
   
@@ -694,6 +1005,99 @@ Coll icarus::simfilter::FilterNeutrinosActiveVolume::sorted(Coll const& coll) {
   
 } // icarus::simfilter::FilterNeutrinosActiveVolume::sorted()
 
+
+
+// -----------------------------------------------------------------------------
+auto icarus::simfilter::FilterNeutrinosActiveVolume::parseInitialState
+  (std::vector<std::vector<std::vector<std::string>>> const& interSpecs)
+  -> std::vector<details::InteractionComposition_t>
+{
+  std::vector<details::InteractionComposition_t> interactions;
+  for (auto const& spec: interSpecs)
+    interactions.push_back(parseInteraction(spec));
+  return interactions;
+} // icarus::simfilter::FilterNeutrinosActiveVolume::parseInitialState()
+
+
+// -----------------------------------------------------------------------------
+auto icarus::simfilter::FilterNeutrinosActiveVolume::parseInteraction
+  (std::vector<std::vector<std::string>> const& interSpec)
+  -> details::InteractionComposition_t
+{
+  details::InteractionComposition_t interaction;
+  for (auto const& spec: interSpec)
+    interaction.particles.push_back(parseInteractingParticle(spec));
+  return interaction;
+} // icarus::simfilter::FilterNeutrinosActiveVolume::parseInteraction()
+
+
+// -----------------------------------------------------------------------------
+auto icarus::simfilter::FilterNeutrinosActiveVolume::parseInteractingParticle
+  (std::vector<std::string> const& partSpec)
+  -> details::InteractingParticle_t
+{
+  details::InteractingParticle_t particle;
+  for (std::string const& partIDstr: partSpec) {
+    try {
+      particle.flavors.push_back(parseParticleID(partIDstr));
+    }
+    catch (cet::exception const& e) {
+      throw art::Exception{art::errors::Configuration, "", e }
+        << "Error parsing initial state configuration particles.\n";
+    }
+  }
+  return particle;
+} // icarus::simfilter::FilterNeutrinosActiveVolume::parseInteractingParticle()
+
+
+// -----------------------------------------------------------------------------
+int icarus::simfilter::FilterNeutrinosActiveVolume::parseParticleID
+  (std::string const& IDstr)
+{
+  static std::regex const IntegerPattern
+    { R"([[:space:]]*[+-]?[[:digit:]]+[[:space:]]*)" };
+  
+  if (std::regex_match(IDstr, IntegerPattern)) {
+    try {
+      return std::stoi(IDstr);
+    }
+    catch (std::exception const& e) {
+      throw cet::exception("parseParticleID")
+        << "Logic error: '" << IDstr
+        << "' looked like a number, but `std::stoi()` can't convert it (\""
+        << e.what() << "\").\n";
+    }
+  }
+  else { // not an integer... must be a particle name; ROOT?
+    TDatabasePDG const& Particles = *(TDatabasePDG::Instance());
+    
+    TParticlePDG const* part = Particles.GetParticle(IDstr.c_str());
+    if (!part) {
+      throw cet::exception("parseParticleID")
+        << "No particle with name '" << IDstr << "' is known to ROOT.\n";
+    }
+    return part->PdgCode();
+  }
+  
+} // icarus::simfilter::FilterNeutrinosActiveVolume::parseParticleID()
+
+
+// -----------------------------------------------------------------------------
+std::vector<int>
+icarus::simfilter::FilterNeutrinosActiveVolume::extractInitialStateParticles
+  (simb::MCTruth const& truth)
+{
+  static constexpr int stInitialParticle = 0; // status: initial state particle
+  
+  std::vector<int> particles;
+  for (auto const iPart: util::counter(truth.NParticles())) {
+    simb::MCParticle const& part = truth.GetParticle(iPart);
+    if (part.StatusCode() != stInitialParticle) continue;
+    particles.push_back(part.PdgCode());
+  } // for
+  
+  return particles;
+} // icarus::simfilter::FilterNeutrinosActiveVolume::extractInitialStateParticles()
 
 
 // -----------------------------------------------------------------------------
