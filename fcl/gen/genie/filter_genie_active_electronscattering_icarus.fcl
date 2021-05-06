@@ -1,0 +1,34 @@
+#
+# File:    filter_genie_active_electronscattering_icarus.fcl
+# Purpose: Filters out all events with no neutrino-electron interaction in active volume.
+# Authors: Gianluca Petrillo (petrillo@slac.stanford.edu)
+# Date:    May 6, 2021
+# Version: 1.0
+#
+#
+# The events in the input file are filtered with the requirement that at least
+# one neutrino interaction with an electron happens within the active volume
+# of the detector.
+# See `FilterNeutrinosActiveVolume` documentation for more details.
+#
+# This configuration inherits all the settings, including basic filtering,
+# from "filter_genie_active_icarus.fcl".
+# Read more about it on its description section at its beginning.
+#
+# Changes
+# --------
+# 
+# 20210506 (petrillo@slac.stanford.edu) [v1.0]
+#   original version based on `filter_genie_active_icarus.fcl` v. 2.0
+#
+
+#include "filter_genie_active_icarus.fcl"
+
+
+physics.filters.eventActive.initialState: [
+  # first allowed interaction: e + ...
+  [
+    [ "e-" ] # initial state particle: electron (not even positron)
+  ]
+]
+
