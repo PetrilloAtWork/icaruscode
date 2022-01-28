@@ -86,10 +86,6 @@ namespace icarus { class CheckForMissingFragments; }
  * This module may take long to execute because it triggers the reading of
  * _all raw data_ in the event. It is quite a waste, since it's using only
  * the fragment IDs.
- * 
- * Container fragments are currently treated in a special way, in that the
- * ID of their first contained fragment is used when available, instead of the
- * ID of the container fragment itself.
  */
 class icarus::CheckForMissingFragments: public art::SharedAnalyzer {
   
@@ -318,13 +314,6 @@ class icarus::CheckForMissingFragments: public art::SharedAnalyzer {
     (std::vector<std::string> const& components);
   
   /// Returns whether `fragment` is a container fragment.
-  static bool isContainer(artdaq::Fragment const& fragment);
-  
-  /// Returns the first element of `fragment` if it is a container,
-  /// `fragment` itself otherwise. Null if `fragment` is an empty container.
-  static artdaq::FragmentPtr extractFirstFragment(artdaq::Fragment fragment);
-  
-  
 }; // icarus::CheckForMissingFragments
 
 
@@ -476,26 +465,12 @@ void icarus::CheckForMissingFragments::analyze
     //
     for (artdaq::Fragment const& fragment: *fragsHandle) {
       
-      //
-      // extract the first actual data fragment if the fragment is a container
-      //
-      artdaq::FragmentPtr const firstFragment = extractFirstFragment(fragment);
-      
-      //
-      // extract the component of the data fragment and record it
-      //
-      
-      // out of curiosity, we attempt extracting the component also out of
-      // empty container fragments:
-      artdaq::Fragment const& keyFragment
-        = firstFragment? *firstFragment: fragment;
-      std::string const componentName = extractComponent(keyFragment);
+      std::string const& componentName = extractComponent(fragment);
       if (componentName.empty()) {
-        mf::LogTrace log{ fLogCategory };
-        log << "Fragment ID=" << std::hex << keyFragment.fragmentID() << std::dec;
-        if (isContainer(fragment)) 
-          log << " (container ID=" << std::hex << fragment.fragmentID() << std::dec << ")";
-        log << " is not registered from any component";
+        mf::LogTrace{ fLogCategory }
+          << "Fragment ID=" << std::hex << fragment.fragmentID()
+          << " is not registered in any component";
+        continue;
       } // if no known component
       
       log << " " << componentName;
@@ -630,12 +605,6 @@ auto icarus::CheckForMissingFragments::initializeFragmentMap
 
 
 // -----------------------------------------------------------------------------
-bool icarus::CheckForMissingFragments::isContainer
-  (artdaq::Fragment const& fragment)
-  { return fragment.type() == artdaq::Fragment::ContainerFragmentType; }
-
-
-// -----------------------------------------------------------------------------
 auto icarus::CheckForMissingFragments::initializeComponentStats
   (std::vector<std::string> const& components) -> ComponentStatData
 {
@@ -645,22 +614,6 @@ auto icarus::CheckForMissingFragments::initializeComponentStats
   
   return data;
 } // icarus::CheckForMissingFragments::initializeComponentStats()
-
-
-// -----------------------------------------------------------------------------
-artdaq::FragmentPtr icarus::CheckForMissingFragments::extractFirstFragment
-  (artdaq::Fragment fragment)
-{
-
-  if (!isContainer(fragment))
-    return std::make_unique<artdaq::Fragment>(std::move(fragment));
-  
-  artdaq::ContainerFragment const containerFragment{ std::move(fragment) };
-  
-  return (containerFragment.block_count() == 0)
-    ? artdaq::FragmentPtr{}: containerFragment.at(0);
-  
-} // icarus::CheckForMissingFragments::extractFirstFragment()
 
 
 // -----------------------------------------------------------------------------
