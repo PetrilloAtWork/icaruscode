@@ -1,0 +1,175 @@
+#include "messages_icarus.fcl"
+
+process_name: CheckComp
+
+services: {
+  message: @local::icarus_message_services_interactive_debug  # from messages_icarus.fcl
+}
+
+physics: {
+  analyzers: {
+    componentcheck: {
+      module_type: CheckForMissingFragments
+      ComponentList: {
+        
+        #
+        # TPC
+        #
+        icarustpcee01b: [ 0x1000 ]
+        icarustpcee01m: [ 0x1002 ]
+        icarustpcee01t: [ 0x1004 ]
+        icarustpcee02 : [ 0x1006 ]
+        icarustpcee03 : [ 0x1008 ]
+        icarustpcee04 : [ 0x100a ]
+        icarustpcee05 : [ 0x100c ]
+        icarustpcee06 : [ 0x100e ]
+        icarustpcee07 : [ 0x1010 ]
+        icarustpcee08 : [ 0x1012 ]
+        icarustpcee09 : [ 0x1014 ]
+        icarustpcee10 : [ 0x1016 ]
+        icarustpcee11 : [ 0x1100 ]
+        icarustpcee12 : [ 0x1102 ]
+        icarustpcee13 : [ 0x1104 ]
+        icarustpcee14 : [ 0x1106 ]
+        icarustpcee15 : [ 0x1108 ]
+        icarustpcee16 : [ 0x110a ]
+        icarustpcee17 : [ 0x110c ]
+        icarustpcee18 : [ 0x110e ]
+        icarustpcee19 : [ 0x1110 ]
+        icarustpcee20t: [ 0x1112 ]
+        icarustpcee20m: [ 0x1114 ]
+        icarustpcee20b: [ 0x1116 ]
+        icarustpcew01t: [ 0x1200 ]
+        icarustpcew01m: [ 0x1202 ]
+        icarustpcew01b: [ 0x1204 ]
+        icarustpcew02 : [ 0x1206 ]
+        icarustpcew03 : [ 0x1208 ]
+        icarustpcew04 : [ 0x120a ]
+        icarustpcew05 : [ 0x120c ]
+        icarustpcew06 : [ 0x120e ]
+        icarustpcew07 : [ 0x1210 ]
+        icarustpcew08 : [ 0x1212 ]
+        icarustpcew09 : [ 0x1214 ]
+        icarustpcew10 : [ 0x1216 ]
+        icarustpcew11 : [ 0x1300 ]
+        icarustpcew12 : [ 0x1302 ]
+        icarustpcew13 : [ 0x1304 ]
+        icarustpcew14 : [ 0x1306 ]
+        icarustpcew15 : [ 0x1308 ]
+        icarustpcew16 : [ 0x130a ]
+        icarustpcew17 : [ 0x130c ]
+        icarustpcew18 : [ 0x130e ]
+        icarustpcew19 : [ 0x1310 ]
+        icarustpcew20t: [ 0x1312 ]
+        icarustpcew20m: [ 0x1314 ]
+        icarustpcew20b: [ 0x1316 ]
+        icarustpcwe01t: [ 0x1400 ]
+        icarustpcwe01m: [ 0x1402 ]
+        icarustpcwe01b: [ 0x1404 ]
+        icarustpcwe02 : [ 0x1406 ]
+        icarustpcwe03 : [ 0x1408 ]
+        icarustpcwe04 : [ 0x140a ]
+        icarustpcwe05 : [ 0x140c ]
+        icarustpcwe06 : [ 0x140e ]
+        icarustpcwe07 : [ 0x1410 ]
+        icarustpcwe08 : [ 0x1412 ]
+        icarustpcwe09 : [ 0x1414 ]
+        icarustpcwe10 : [ 0x1416 ]
+        icarustpcwe11 : [ 0x1500 ]
+        icarustpcwe12 : [ 0x1502 ]
+        icarustpcwe13 : [ 0x1504 ]
+        icarustpcwe14 : [ 0x1506 ]
+        icarustpcwe15 : [ 0x1508 ]
+        icarustpcwe16 : [ 0x150a ]
+        icarustpcwe17 : [ 0x150c ]
+        icarustpcwe18 : [ 0x150e ]
+        icarustpcwe19 : [ 0x1510 ]
+        icarustpcwe20t: [ 0x1512 ]
+        icarustpcwe20m: [ 0x1514 ]
+        icarustpcwe20b: [ 0x1516 ]
+        icarustpcww01t: [ 0x1600 ]
+        icarustpcww01m: [ 0x1602 ]
+        icarustpcww01b: [ 0x1604 ]
+        icarustpcww02 : [ 0x1606 ]
+        icarustpcww03 : [ 0x1608 ]
+        icarustpcww04 : [ 0x160a ]
+        icarustpcww05 : [ 0x160c ]
+        icarustpcww06 : [ 0x160e ]
+        icarustpcww07 : [ 0x1610 ]
+        icarustpcww08 : [ 0x1612 ]
+        icarustpcww09 : [ 0x1614 ]
+        icarustpcww10 : [ 0x1616 ]
+        icarustpcww11 : [ 0x1700 ]
+        icarustpcww12 : [ 0x1702 ]
+        icarustpcww13 : [ 0x1704 ]
+        icarustpcww14 : [ 0x1706 ]
+        icarustpcww15 : [ 0x1708 ]
+        icarustpcww16 : [ 0x170a ]
+        icarustpcww17 : [ 0x170c ]
+        icarustpcww18 : [ 0x170e ]
+        icarustpcww19 : [ 0x1710 ]
+        icarustpcww20t: [ 0x1712 ]
+        icarustpcww20m: [ 0x1714 ]
+        icarustpcww20b: [ 0x1716 ]
+        
+        #
+        # PMT
+        #
+        icaruspmtwwtop01: [ 0x2000 ]
+        icaruspmtwwtop02: [ 0x2001 ]
+        icaruspmtwwtop03: [ 0x2002 ]
+        icaruspmtwwbot01: [ 0x2003 ]
+        icaruspmtwwbot02: [ 0x2004 ]
+        icaruspmtwwbot03: [ 0x2005 ]
+        icaruspmtwetop01: [ 0x2006 ]
+        icaruspmtwetop02: [ 0x2007 ]
+        icaruspmtwetop03: [ 0x2008 ]
+        icaruspmtwebot01: [ 0x2009 ]
+        icaruspmtwebot02: [ 0x200a ]
+        icaruspmtwebot03: [ 0x200b ]
+        icaruspmtewtop01: [ 0x200c ]
+        icaruspmtewtop02: [ 0x200d ]
+        icaruspmtewtop03: [ 0x200e ]
+        icaruspmtewbot01: [ 0x200f ]
+        icaruspmtewbot02: [ 0x2010 ]
+        icaruspmtewbot03: [ 0x2011 ]
+        icaruspmteetop01: [ 0x2012 ]
+        icaruspmteetop02: [ 0x2013 ]
+        icaruspmteetop03: [ 0x2014 ]
+        icaruspmteebot01: [ 0x2015 ]
+        icaruspmteebot02: [ 0x2016 ]
+        icaruspmteebot03: [ 0x2017 ]
+        
+        #
+        # CRT (TODO)
+        #
+        icaruscrt01nni: [ ]
+        icaruscrt01nno: [ ]
+        icaruscrt03wci: [ ]
+        icaruscrt03wco: [ ]
+        icaruscrt04eci: [ ]
+        icaruscrt04eco: [ ]
+        icaruscrt05wni: [ ]
+        icaruscrt05wno: [ ]
+        icaruscrt06esi: [ ]
+        icaruscrt06eso: [ ]
+        icaruscrt07wsi: [ ]
+        icaruscrt07wso: [ ]
+        icaruscrt08eni: [ ]
+        icaruscrt08eno: [ ]
+        icaruscrt09ssi: [ ]
+        icaruscrt09sso: [ ]
+        
+        #
+        # others
+        #
+        icarustrigger: [ 0x4001 ]
+        
+      }
+      
+    } # componentcheck
+  } # analyzers
+  
+  checks: [ componentcheck ]
+}
+

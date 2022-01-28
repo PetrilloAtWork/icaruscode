@@ -5,6 +5,7 @@ cet_find_library(LIBWDA NAMES wda PATHS ENV LIBWDA_LIB NO_DEFAULT_PATH)
 art_make(
           EXCLUDE
                         PMTconfigurationExtraction_module.cc
+                        CheckForMissingFragments_module.cc
                         DumpPMTconfiguration_module.cc
                         DumpArtDAQfragments_module.cc
                         DaqDecoderICARUSPMT_module.cc
@@ -62,6 +63,13 @@ simple_plugin(PMTconfigurationExtraction module
   art_Framework_Services_Registry
   fhiclcpp
   cetlib_except
+  )
+
+simple_plugin(CheckForMissingFragments module
+  artdaq_core::artdaq-core_Data
+  fhiclcpp
+  cetlib_except
+  ROOT::Core
   )
 
 simple_plugin(DumpPMTconfiguration module
