@@ -103,7 +103,7 @@ icarus_photoelectronresponse_runXXXX: {
   tool_type: SampledWaveformFunctionTool
   
   TransitTime: "55.1 ns"
-  Gain:         @local::icarus_settings_opdet.nominalPMTgain  # Gain = 7.0e6
+  Gain:         7.0e6
   
 } # icarus_photoelectronresponse_exponentials
 
