@@ -31,6 +31,19 @@
     <class name="art::Ptr<sbn::ExtraTriggerInfo>"/>
     <class name="art::Wrapper<sbn::ExtraTriggerInfo>"/>
 
+  <!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -->
+  <!-- sbn::ICARUSTriggerConfiguration -->
+
+  <!--   class -->
+  <class name="icarus::TriggerConfiguration" ClassVersion="11" >
+   <version ClassVersion="11" checksum="1285543607"/>
+   <version ClassVersion="10" checksum="1190620765"/>
+  </class>
+
+    <!-- art pointers and wrappers -->
+    <class name="art::Ptr<icarus::TriggerConfiguration>"/>
+    <class name="art::Wrapper<icarus::TriggerConfiguration>"/>
+
 
   <!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -->
   <!-- copy&paste templates for: -->
