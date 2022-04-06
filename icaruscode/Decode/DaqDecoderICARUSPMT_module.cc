@@ -494,7 +494,7 @@ class icarus::DaqDecoderICARUSPMT: public art::EDProducer {
     fhicl::Atom<std::string> LogCategory {
       Name("LogCategory"),
       Comment("name of the category for message stream"),
-      "PMTDecoder" // default
+      "DaqDecoderICARUSPMT" // default
       };
     
   }; // Config
@@ -1268,7 +1268,7 @@ void icarus::DaqDecoderICARUSPMT::produce(art::Event& event) {
         = makeFragmentCollection(fragment);
       
       if (empty(fragmentCollection)) {
-        mf::LogWarning("DaqDecoderICARUSPMT")
+        mf::LogWarning(fLogCategory)
           << "Found a data fragment (ID=" << extractFragmentBoardID(fragment)
           << ") containing no data.";
         continue;
@@ -1288,21 +1288,21 @@ void icarus::DaqDecoderICARUSPMT::produce(art::Event& event) {
   }
   catch (cet::exception const& e) {
     if (!fSurviveExceptions) throw;
-    mf::LogError("DaqDecoderICARUSPMT")
+    mf::LogError(fLogCategory)
       << "Error while attempting to decode PMT data:\n" << e.what() << '\n';
     opDetWaveforms.clear();
     ++fNFailures;
   }
   catch (...) {
     if (!fSurviveExceptions) throw;
-    mf::LogError("DaqDecoderICARUSPMT")
+    mf::LogError(fLogCategory)
       << "Error while attempting to decode PMT data.\n";
     opDetWaveforms.clear();
     ++fNFailures;
   }
   
   if (duplicateBoards) {
-    mf::LogWarning log { "DaqDecoderICARUSPMT" };
+    mf::LogWarning log { fLogCategory };
     log << "found multiple data product entries for the same board:";
     for (auto [ boardID, count ]: boardCounts) {
       if (count < 2U) continue;
@@ -1914,7 +1914,7 @@ raw::OpDetWaveform icarus::DaqDecoderICARUSPMT::mergeWaveformGroup(
   auto const iend = indices.end();
   raw::OpDetWaveform mergedWaveform{ std::move(allWaveforms.at(*itIndex)) };
   /*
-  mf::LogTrace("DaqDecoderICARUSPMT")
+  mf::LogTrace(fLogCategory)
     << "Extending waveform [#" << (*itIndex) << "] channel="
     << mergedWaveform.ChannelNumber() << " time="
     << waveformStartTime(mergedWaveform) << " -- "
@@ -1924,7 +1924,7 @@ raw::OpDetWaveform icarus::DaqDecoderICARUSPMT::mergeWaveformGroup(
   */
   while (++itIndex != iend) {
     auto& waveform = allWaveforms.at(*itIndex);
-    mf::LogTrace("DaqDecoderICARUSPMT")
+    mf::LogTrace(fLogCategory)
       << " - extending waveform channel=" << mergedWaveform.ChannelNumber()
       << " time=" << waveformStartTime(mergedWaveform) << " -- "
       << waveformEndTime(mergedWaveform) << " (" << mergedWaveform.size()

@@ -97,13 +97,16 @@ outputs: {
   rootoutput: {
                       @table::icarus_rootoutput
     dataTier:        "decoded"
-    fileProperties:   { maxInputFiles: 1 }
-    checkFileName:    false
+#    fileProperties:   { maxInputFiles: 1 }
+#    checkFileName:    false
     compressionLevel: 501
     
-    outputCommands:  [ "drop *_*_*_*", "keep *_*_*_DecodePMT" ]
+    outputCommands:  [
+        "drop *_*_*_*", "keep *_*_*_DecodePMT"
+      , "drop raw::OpDetWaveforms_daqPMT__DecodePMT"
+      ]
   } # rootoutput
-} # outputs 
+} # outputs
 
 
 # ------------------------------------------------------------------------------
@@ -117,7 +120,7 @@ physics.producers.daqPMT.TriggerTag:   daqTrigger # required
 # customization of PMT decoding
 #
 
-physics.producers.daqPMT.SurviveExceptions: false
+physics.producers.daqPMT.SurviveExceptions:  true
 physics.producers.daqPMT.DiagnosticOutput:  false
 physics.producers.daqPMT.PacketDump:        false
 physics.producers.daqPMT.RequireKnownBoards: true
@@ -131,5 +134,10 @@ physics.producers.daqPMT.DataTrees: [ "PMTfragments" ]
 physics.producers.daqTrigger.DecoderTool.DiagnosticOutput: true
 physics.producers.daqTrigger.DecoderTool.Debug: false
 
+
+# ------------------------------------------------------------------------------
+# Hush!
+
+services.message.destinations.LogDebugFile: @erase
 
 # ------------------------------------------------------------------------------

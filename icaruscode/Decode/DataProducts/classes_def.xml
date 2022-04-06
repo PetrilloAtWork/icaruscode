@@ -19,13 +19,17 @@
   <!-- sbn::ExtraTriggerInfo -->
 
   <!--   class -->
-  <class name="sbn::ExtraTriggerInfo" ClassVersion="11" >
+  <class name="sbn::ExtraTriggerInfo" ClassVersion="12" >
+   <version ClassVersion="12" checksum="3512677898"/>
    <version ClassVersion="11" checksum="2691428079"/>
    <version ClassVersion="10" checksum="2751074963"/>
   </class>
   
     <!-- dependencies -->
     <enum name="sbn::bits::triggerSource" ClassVersion="10" />
+    <class name="sbn::ExtraTriggerInfo::CryostatInfo" ClassVersion="10" >
+     <version ClassVersion="10" checksum="313789291"/>
+    </class>
 
     <!-- art pointers and wrappers -->
     <class name="art::Ptr<sbn::ExtraTriggerInfo>"/>

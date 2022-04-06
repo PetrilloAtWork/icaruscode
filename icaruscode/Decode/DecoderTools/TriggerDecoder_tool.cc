@@ -21,6 +21,7 @@
 #include "lardata/DetectorInfoServices/DetectorClocksService.h"
 #include "lardataalg/DetectorInfo/DetectorTimings.h"
 #include "lardataalg/Utilities/quantities/spacetime.h" // util::quantities::nanosecond
+#include "larcorealg/CoreUtils/enumerate.h"
 #include "lardataobj/RawData/ExternalTrigger.h" //JCZ: TBD, placeholder for now to represent the idea
 #include "lardataobj/RawData/TriggerData.h" // raw::Trigger
 #include "lardataobj/Simulation/BeamGateInfo.h" //JCZ:, another placeholder I am unsure if this and above will be combined at some point into a dedicated object 
@@ -44,6 +45,123 @@
 
 
 using namespace std::string_literals;
+using namespace std::string_view_literals;
+
+namespace local {
+  
+  icarus::ICARUSTriggerInfo parse_ICARUSTriggerString(const char* buffer)
+  {
+    std::string data_input = buffer;
+    size_t pos = 0;
+    std::string delimiter = ",";
+    std::vector<std::string> sections;
+    std::string token = "";
+    while ((pos = data_input.find(delimiter)) != std::string::npos) {
+      token = data_input.substr(0, pos);
+      sections.push_back(token);
+      data_input.erase(0, pos + delimiter.length());
+    }
+    sections.push_back(data_input);
+//     for (auto const& [iSection, section]: util::enumerate(sections))
+//       std::cout << "[" << iSection << "] '" << section << "'" << std::endl;
+    icarus::ICARUSTriggerInfo info;
+    info.name = sections[2];
+    info.event_no = std::stol(sections[3]);
+    info.seconds = std::stoi(sections[4]);
+    info.nanoseconds = std::stol(sections[5]);
+    info.wr_name = sections[6];
+    info.wr_event_no = std::stol(sections[7]);
+    info.wr_seconds = std::stol(sections[8]);
+    info.wr_nanoseconds = std::stol(sections[9]);
+    info.gate_id = std::stol(sections[17]);
+    info.gate_type = std::stoi(sections[27]);
+//     info.beam_seconds = std::stol(sections[30]);
+//     info.beam_nanoseconds = std::stol(sections[31]);
+    return info;
+  }
+
+
+  class ICARUSTriggerUDPFragment{
+
+  public:
+    
+    ICARUSTriggerUDPFragment(artdaq::Fragment const &f)
+      : fFragment(f)
+      , info { local::parse_ICARUSTriggerString((const char*)fFragment.dataBeginBytes()) }
+      {}
+    icarus::ICARUSTriggerUDPFragmentMetadata const * Metadata() const
+      { return fFragment.metadata<icarus::ICARUSTriggerUDPFragmentMetadata>(); }
+    
+    size_t DataPayloadSize() const
+      { return fFragment.dataSizeBytes(); }
+
+    std::string GetDataString() const
+      { return { (char*)fFragment.dataBeginBytes(), fFragment.dataSizeBytes() }; }
+
+    /*
+    size_t ExpectedDataSize() const
+    { return Metadata()->ExpectedDataSize(); }
+    */
+    
+    std::string getName() const { return info.name; }
+
+    long getEventNo() const { return info.event_no; }
+
+    long getSeconds() const { return info.seconds; }
+
+    long getNanoSeconds() const { return info.nanoseconds; }
+
+    std::string getWRName() const { return info.wr_name; }
+
+    long getWREventNo() const { return info.wr_event_no; }
+
+    long getWRSeconds() const { return info.wr_seconds; }
+
+    long getWRNanoSeconds() const { return info.wr_nanoseconds; }
+    
+    long getGateID() const { return info.gate_id; }
+
+    bool isBNB() const { return getGateType()==1; }
+
+    bool isNuMI() const { return getGateType()==2; }
+
+    int getGateType() const { return info.gate_type; }
+    /*
+    long getBeamSeconds() const { return info.beam_seconds; }
+
+    long getBeamNanoSeconds() const { return info.beam_nanoseconds; }
+    */
+    uint64_t getLastTimestamp() const { return Metadata()->getLastTimestamp(); }
+
+    uint64_t getNTPTime() const { return Metadata()->getNTPTime(); } 
+
+    long getDeltaGates() const { return Metadata()->getDeltaGates(); }
+
+    uint64_t getLastTimestampBNB() const { return Metadata()->getLastTimestampBNB(); }
+    uint64_t getLastTimestampNuMI() const { return Metadata()->getLastTimestampNuMI(); }
+    uint64_t getLastTimestampOther() const { return Metadata()->getLastTimestampOther(); }
+    
+    long getDeltaGatesBNB() const { return Metadata()->getDeltaGatesBNB(); }
+    long getDeltaGatesNuMI() const { return Metadata()->getDeltaGatesNuMI(); }
+    long getDeltaGatesOther() const { return Metadata()->getDeltaGatesOther(); }
+
+  private:
+    artdaq::Fragment const & fFragment;
+    icarus::ICARUSTriggerInfo info;
+  };
+  
+} // local namespace
+
+
+struct dumpTimestamp { std::uint64_t ts; };
+
+std::ostream& operator<< (std::ostream& out, dumpTimestamp ts) {
+  return out << (ts.ts/1'000'000'000)
+    << "." << std::setfill('0') << std::setw(9) << (ts.ts%1'000'000'000)
+    << std::setfill(' ') << " s";
+}
+
+
 
 namespace daq 
 {
@@ -162,11 +280,14 @@ namespace daq
     detinfo::DetectorTimings const fDetTimings; ///< Detector clocks and timings.
     
     /// Creates a `ICARUSTriggerInfo` from a generic fragment.
-    icarus::ICARUSTriggerUDPFragment makeTriggerFragment
+    local::ICARUSTriggerUDPFragment makeTriggerFragment
       (artdaq::Fragment const& fragment) const;
     
     /// Parses the trigger data packet with the "standard" parser.
-    icarus::ICARUSTriggerInfo parseTriggerString(std::string_view data) const;
+    icarus::details::KeyValuesData parseTriggerString(std::string_view data) const;
+    
+    /// Extracts trigger information from the trigger data packet.
+    icarus::ICARUSTriggerInfo triggerInfoFromString(std::string_view data) const;
     
     /// Name of the data product instance for the current trigger.
     static std::string const CurrentTriggerInstanceName;
@@ -187,8 +308,9 @@ namespace daq
     static constexpr nanoseconds BNBgateDuration { 1600. };
     static constexpr nanoseconds NuMIgateDuration { 9500. };
     
+    template <typename S>
     static std::string_view firstLine
-      (std::string const& s, std::string const& endl = "\0\n\r"s);
+      (S const& s, std::string_view endl = "\0\n\r"sv);
     
     /// Combines second and nanosecond counts into a 64-bit timestamp.
     static std::uint64_t makeTimestamp(unsigned int s, unsigned int ns)
@@ -196,6 +318,11 @@ namespace daq
     /// Returns the difference `a - b`.
     static long long int timestampDiff(std::uint64_t a, std::uint64_t b)
       { return static_cast<long long int>(a) - static_cast<long long int>(b); }
+    
+    /// Encodes the `connectorWord` LVDS bits from the specified `cryostat`
+    /// and `connector` into the format required by `sbn::ExtraTriggerInfo`.
+    static std::uint64_t encodeLVDSbits
+      (short int cryostat, short int connector, std::uint64_t connectorWord);
     
   };
 
@@ -242,11 +369,11 @@ namespace daq
   }
   
   
-  icarus::ICARUSTriggerUDPFragment TriggerDecoder::makeTriggerFragment
+  local::ICARUSTriggerUDPFragment TriggerDecoder::makeTriggerFragment
     (artdaq::Fragment const& fragment) const
   {
     try {
-      return icarus::ICARUSTriggerUDPFragment { fragment };
+      return local::ICARUSTriggerUDPFragment { fragment };
     }
     catch(std::exception const& e) {
       mf::LogSystem("TriggerDecoder")
@@ -261,21 +388,32 @@ namespace daq
           << sbndaq::dumpFragment(fragment);
       throw;
     }
-  } // TriggerDecoder::parseTriggerString()
+  } // TriggerDecoder::makeTriggerFragment()
 
   
-  icarus::ICARUSTriggerInfo TriggerDecoder::parseTriggerString
+  icarus::details::KeyValuesData TriggerDecoder::parseTriggerString
     (std::string_view data) const
   {
+    //
+    // parse
+    //
+//     std::cout << "Parsing:\n" << std::string(80, '-') << '\n'
+//       << data << '\n' << std::string(80, '-') << std::endl;
+    icarus::details::KeyedCSVparser parser;
+    parser.addPatterns({ // { key pattern, number of values }
+        { "Cryo(1 EAST|2 WEST) Connector [0-3] and [0-3]", 1U }
+      , { "Cryo1 EAST Connector 2 and 3", 1U }
+      , { "Trigger Type", 1U } // used to be a string
+      });
+    
     try {
-      return icarus::parse_ICARUSTriggerString(data.data());
+      return parser(firstLine(data));
     }
-    catch(std::exception const& e) {
-      mf::LogSystem("TriggerDecoder")
-        << "Error while running standard parser on " << data.length()
-        << "-char long trigger string:\n==>|" << data
-        << "|<==\nError message: " << e.what();
-      throw;
+    catch (icarus::details::KeyedCSVparser::Error const& e) {
+      throw cet::exception{ "TriggerDecoder" }
+        << "Error parsing trigger data:\n" << std::string(80, '-')
+        << "\n" << data << "\n" << std::string(80, '-')
+        << "\nError: " << e.what() << "\n";
     }
     catch(...) {
       mf::LogSystem("TriggerDecoder")
@@ -284,6 +422,25 @@ namespace daq
       throw;
     }
   } // TriggerDecoder::parseTriggerString()
+  
+  icarus::ICARUSTriggerInfo TriggerDecoder::triggerInfoFromString
+    (std::string_view data) const
+  {
+    icarus::details::KeyValuesData parsedData = parseTriggerString(data);
+    icarus::ICARUSTriggerInfo info;
+    // info.name = "";
+    info.event_no       = parsedData.getItem("Local_TS1").getNumber<long>(0);
+    info.seconds        = parsedData.getItem("Local_TS1").getNumber<long>(1);
+    info.nanoseconds    = parsedData.getItem("Local_TS1").getNumber<long>(2);
+    // info.wr_name        = parsedData.getItem("WR_TS1").getNumber<long>(0);
+    info.wr_event_no    = parsedData.getItem("WR_TS1")   .getNumber<long>(0);
+    info.wr_seconds     = parsedData.getItem("WR_TS1")   .getNumber<long>(1);
+    info.wr_nanoseconds = parsedData.getItem("WR_TS1")   .getNumber<long>(2);
+    info.gate_id        = parsedData.getItem("Gate ID")  .getNumber<long>(0);
+    info.gate_type      = parsedData.getItem("Gate Type").getNumber<int> (0);
+    return info;
+    
+  } // TriggerDecoder::triggerInfoFromString()
 
   
 
@@ -293,13 +450,16 @@ namespace daq
     // trigger time; to avoid multiple (potentially inconsistent) corrections,
     // the decoder trusts it and references all the times with respect to it.
     uint64_t const artdaq_ts = fragment.timestamp();
-    icarus::ICARUSTriggerUDPFragment frag { makeTriggerFragment(fragment) };
+    local::ICARUSTriggerUDPFragment frag { makeTriggerFragment(fragment) };
     std::string data = frag.GetDataString();
     char *buffer = const_cast<char*>(data.c_str());
 
-    icarus::ICARUSTriggerInfo datastream_info = parseTriggerString(buffer);
+    icarus::ICARUSTriggerInfo datastream_info = triggerInfoFromString(buffer);
     uint64_t const raw_wr_ts // this is raw, unadultered, uncorrected
-      = makeTimestamp(frag.getWRSeconds(), frag.getWRNanoSeconds());
+      = makeTimestamp(
+        frag.getWRSeconds(),
+        frag.getWRNanoSeconds()
+        );
     
     // correction (explicitly converted to signed)
     int64_t const WRtimeToTriggerTime
@@ -318,7 +478,7 @@ namespace daq
     // --- BEGIN -- TEMPORARY --------------------------------------------------
     // remove this part when the beam gate timestamp is available via fragment
     // or via the parser
-    auto const parsedData = icarus::details::KeyedCSVparser{}(firstLine(data));
+    auto const parsedData = parseTriggerString(data);
     unsigned int beamgate_count { std::numeric_limits<unsigned int>::max() };
     std::uint64_t beamgate_ts { artdaq_ts }; // we cheat
     /* [20210717, petrillo@slac.stanford.edu] `(pBeamGateInfo->nValues() == 3)`:
@@ -334,13 +494,13 @@ namespace daq
       beamgate_count = pBeamGateInfo->getNumber<unsigned int>(0U);
       
       uint64_t const raw_bg_ts = makeTimestamp( // raw and uncorrected too
-        pBeamGateInfo->getNumber<unsigned int>(1U),
-        pBeamGateInfo->getNumber<unsigned int>(2U)
+        pBeamGateInfo->getNumber<unsigned int>(1U, 10),
+        pBeamGateInfo->getNumber<unsigned int>(2U, 10)
         );
       
       // assuming the raw times from the fragment are on the same time scale
       // (same offset corrections)
-      beamgate_ts += raw_bg_ts - raw_wr_ts;
+      beamgate_ts -= raw_wr_ts - raw_bg_ts;
       
     } // if has gate information
     // --- END ---- TEMPORARY --------------------------------------------------
@@ -349,27 +509,25 @@ namespace daq
     {
       std::cout << "Full Timestamp = " << artdaq_ts
         << "\nBeam gate " << beamgate_count << " at "
-        << (beamgate_ts/1'000'000'000) << "." << std::setfill('0')
-        << std::setw(9) << (beamgate_ts%1'000'000'000) << std::setfill(' ')
-        << " s (" << timestampDiff(beamgate_ts, artdaq_ts)
+        << dumpTimestamp{beamgate_ts} << " (" << timestampDiff(beamgate_ts, artdaq_ts)
         << " ns relative to trigger)" << std::endl;
       
-      // note that this parsing is independent from the one used above
-      std::string_view const dataLine = firstLine(data);
-      try {
-        auto const parsedData = icarus::details::KeyedCSVparser{}(dataLine);
-        std::cout << "Parsed data (from " << dataLine.size() << " characters): "
-          << parsedData << std::endl;
-      }
-      catch(icarus::details::KeyedCSVparser::Error const& e) {
-        mf::LogError("TriggerDecoder")
-          << "Error parsing " << dataLine.length()
-          << "-char long trigger string:\n==>|" << dataLine
-          << "|<==\nError message: " << e.what() << std::endl;
-        throw;
-      }
+      if (fDebug) {
+        // note that this parsing is independent from the one used above
+        std::string_view const dataLine = firstLine(data);
+        try {
+          auto const parsedData = parseTriggerString(dataLine);
+          std::cout << "Parsed data (from " << dataLine.size() << " characters): "
+            << parsedData << std::endl;
+        }
+        catch(icarus::details::KeyedCSVparser::Error const& e) {
+          mf::LogError("TriggerDecoder")
+            << "Error parsing " << dataLine.length()
+            << "-char long trigger string:\n==>|" << dataLine
+            << "|<==\nError message: " << e.what() << std::endl;
+          throw;
+        }
       
-      if (fDebug) { // this grows tiresome quickly when processing many events
         std::cout << "Trigger packet content:\n" << dataLine
           << "\nFull trigger fragment dump:"
           << sbndaq::dumpFragment(fragment) << std::endl;
@@ -404,7 +562,62 @@ namespace daq
     fTriggerExtra->previousTriggerTimestamp
     fTriggerExtra->anyPreviousTriggerTimestamp
     */
+    // trigger location: 0x01=EAST; 0x02=WEST; 0x07=ALL
+    
+    int const triggerLocation = parsedData.getItem("Trigger Source").getNumber<int>(0);
+    fTriggerExtra->cryostats[sbn::ExtraTriggerInfo::EastCryostat] 
+      = {
+        // triggerCount
+        (fTriggerExtra->triggerID <= 1)
+          ? 0UL: parsedData.getItem("Cryo1 EAST counts").getNumber<unsigned long int>(0),
+        // LVDSstatus
+        {
+          (triggerLocation & 1) // EE
+            ? encodeLVDSbits(
+              sbn::ExtraTriggerInfo::EastCryostat, 2, /* any of the connectors */
+              parsedData.getItem("Cryo1 EAST Connector 2 and 3").getNumber<std::uint64_t>(0, 16)
+              )
+            : 0ULL,
+          (triggerLocation & 1) // EW
+            ? encodeLVDSbits(
+              sbn::ExtraTriggerInfo::EastCryostat, 0, /* any of the connectors */
+              parsedData.getItem("Cryo1 EAST Connector 0 and 1").getNumber<std::uint64_t>(0, 16)
+              )
+            : 0ULL
+        }
+      };
+    fTriggerExtra->cryostats[sbn::ExtraTriggerInfo::WestCryostat]
+      = {
+        // triggerCount
+        (fTriggerExtra->triggerID <= 1)
+          ? 0UL: parsedData.getItem("Cryo2 WEST counts").getNumber<unsigned long int>(0),
+        // LVDSstatus
+        {
+          (triggerLocation & 2) // WE
+            ? encodeLVDSbits(
+              sbn::ExtraTriggerInfo::WestCryostat, 2, /* any of the connectors */
+              parsedData.getItem("Cryo2 WEST Connector 2 and 3").getNumber<std::uint64_t>(0, 16)
+              )
+            : 0ULL,
+          (triggerLocation & 2) // WW
+            ? encodeLVDSbits(
+              sbn::ExtraTriggerInfo::WestCryostat, 0, /* any of the connectors */
+              parsedData.getItem("Cryo2 WEST Connector 0 and 1").getNumber<std::uint64_t>(0, 16)
+              )
+            : 0ULL
+        }
+      };
     fTriggerExtra->WRtimeToTriggerTime = WRtimeToTriggerTime;
+    
+    // we expect the LVDS status bits 
+    for (auto const& cryoInfo [[maybe_unused]]: fTriggerExtra->cryostats)
+      for (auto LVDS [[maybe_unused]]: cryoInfo.LVDSstatus)
+        assert((LVDS & 0xFF000000'FF000000) == 0);
+
+    if (fDiagnosticOutput) {
+      mf::LogInfo{ "TriggerDecoder" }
+        << "Extra trigger information: " << *fTriggerExtra;
+    }
     
     //
     // absolute time trigger (raw::ExternalTrigger)
@@ -483,12 +696,38 @@ namespace daq
     return;
   }
 
+  template <typename S>
   std::string_view TriggerDecoder::firstLine
-    (std::string const& s, std::string const& endl /* = "\0\n\r" */)
+    (S const& s, std::string_view endl /* = "\0\n\r" */)
   {
     return { s.data(), std::min(s.find_first_of(endl), s.size()) };
   }
   
+  
+  std::uint64_t TriggerDecoder::encodeLVDSbits
+    (short int cryostat, short int connector, std::uint64_t connectorWord)
+  {
+    /*
+    * Encoding of the LVDS channels from the trigger:
+    * * east wall:  `00<C0P2><C0P1><C0P0>00<C1P2><C1P1><C1P0>`
+    * * west wall:  `00<C2P2><C2P1><C2P0>00<C3P2><C3P1><C3P0>`
+    * 
+    * The prescription from `sbn::ExtraTriggerInfo` translates into:
+    * * east wall:  `00<C3P2><C3P1><C3P0>00<C2P2><C2P1><C2P0>`
+    * * west wall:  `00<C1P2><C1P1><C1P0>00<C0P2><C0P1><C0P0>`
+    * 
+    * Therefore, the two 32-bit half-words need to be swapped.
+    * 
+    * This holds for both cryostats, and both walls.
+    */
+    
+    std::uint64_t lsw = connectorWord & 0xFFFF'FFFFULL;
+    std::uint64_t msw = connectorWord >> 32ULL;
+    assert(connectorWord == ((msw << 32ULL) | lsw));
+    std::swap(lsw, msw);
+    return (msw << 32ULL) | lsw;
+  } // TriggerDecoder::encodeLVDSbits()
+
   
   DEFINE_ART_CLASS_TOOL(TriggerDecoder)
 
