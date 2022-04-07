@@ -59,6 +59,9 @@ struct sbn::ExtraTriggerInfo {
   /// Type of this gate (`sbn::triggerSource::NBits` marks this object invalid).
   sbn::triggerSource sourceType { sbn::triggerSource::NBits };
   
+  /// Type of this trigger (see `sbn::triggerType`).
+  sbn::triggerType triggerType { sbn::triggerType::NBits };
+  
   
   // --- BEGIN -- Since the beginning of the run -------------------------------
   /// @name Counters and times since the beginning of the run.
@@ -69,6 +72,9 @@ struct sbn::ExtraTriggerInfo {
   
   /// Absolute timestamp of the opening of this beam gate [ns]
   std::uint64_t beamGateTimestamp { NoTimestamp };
+  
+  /// Absolute timestamp of the opening of the enable gate [ns]
+  std::uint64_t enableGateTimestamp { NoTimestamp };
   
   /// The identifier of this trigger (usually matching the event number).
   unsigned int triggerID { NoID };
@@ -220,8 +226,27 @@ struct sbn::ExtraTriggerInfo {
     
   }; // CryostatInfo
   
+  
+  /// Bits for the trigger location (@see `triggerLocation()`).
+  unsigned int triggerLocationBits { 0U };
+  
   /// Status of each LVDS channel in each PMT wall at trigger time.
   std::array<CryostatInfo, MaxCryostats> cryostats;
+  
+  /**
+   * @brief Returns the location of the trigger.
+   * 
+   * The returned value is a mask of `sbn::bits::triggerLocation` bits.
+   * To test the state of a bit, it needs to be converted into a mask, e.g.:
+   * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.cpp}
+   * bool onTPCEE
+   *   = extraTriggerInfo.triggerLocation() & mask(sbn::triggerLocation::TPCEE);
+   * bool onTPCxE = extraTriggerInfo.triggerLocation()
+   *   & mask(sbn::triggerLocation::TPCEE, sbn::triggerLocation::TPCWE);
+   * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   */
+  sbn::bits::triggerLocationMask triggerLocation() const
+    { return { triggerLocationBits }; }
   
   
   /// @}

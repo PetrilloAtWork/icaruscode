@@ -122,13 +122,18 @@ std::ostream& sbn::operator<< (std::ostream& out, ExtraTriggerInfo const& info)
   
   // quite a load:
   out
-    <<   "trigger ID=" << dumpTriggerID(info.triggerID) << " from source "
-      << name(info.sourceType)
+    <<   "trigger ID=" << dumpTriggerID(info.triggerID)
+      << " (type " << name(info.triggerType) << ")"
+      << " from source " << name(info.sourceType)
       << " at " << dumpTimestamp(info.triggerTimestamp)
       << " on beam gate ID=" << dumpTriggerID(info.gateID)
       << " at " << dumpTimestamp(info.beamGateTimestamp)
       << " (diff: "
       << timestampDiff(info.beamGateTimestamp, info.triggerTimestamp) << " ns)"
+    << "\n"
+      << "enable gate opened at " << dumpTimestamp(info.enableGateTimestamp)
+      << " (" << timestampDiff(info.beamGateTimestamp, info.enableGateTimestamp)
+      << " ns before the gate)"
     << "\n"
       << "counts from this source: trigger="
         << dumpTriggerCount(info.triggerCount)
@@ -165,7 +170,11 @@ std::ostream& sbn::operator<< (std::ostream& out, ExtraTriggerInfo const& info)
     out << "\nCorrection applied to the timestamps: "
       << dumpTimestamp(info.WRtimeToTriggerTime);
   }
-  
+  if (info.triggerLocationBits != 0) {
+    out << "\nLocation(s) of trigger:";
+    for (std::string const& bitName: names(info.triggerLocation()))
+      out << " " << bitName;
+  }
   out << "\nWest cryostat: "
     << info.cryostats[ExtraTriggerInfo::WestCryostat].triggerCount
     << " triggers";
