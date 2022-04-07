@@ -112,6 +112,19 @@ icarus_photoelectronresponse_exponentials: {
 
 
 #
+# Single photoelectron response from data. TODO document where from!
+# 
+icarus_photoelectronresponse_runXXXX: {
+  
+  tool_type: SampledWaveformFunctionTool
+  
+  TransitTime: "55.1 ns"
+  Gain:         @local::icarus_settings_opdet.nominalPMTgain  # Gain = 7.0e6
+  
+} # icarus_photoelectronresponse_exponentials
+
+
+#
 # Custom photoelectron response.
 # 
 # This is just an example for an arbitrary function shape; the example tries to

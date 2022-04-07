@@ -73,6 +73,10 @@ simple_plugin(AsymExpPulseFunctionTool "tool"
   icaruscode_PMT_Algorithms
   )
 
+simple_plugin(SampledWaveformFunctionTool "tool"
+  icaruscode_PMT_Algorithms
+  )
+
 simple_plugin(CustomPulseFunctionTool "tool"
   icaruscode_PMT_Algorithms
   ROOT::Hist
@@ -87,6 +91,7 @@ art_make(
     "PMTWaveformBaselinesFromReadoutConfiguration_module.cc"
     "AsymGaussPulseFunctionTool_tool.cc"
     "AsymExpPulseFunctionTool_tool.cc"
+    "SampledWaveformFunctionTool_tool.cc"
     "CustomPulseFunctionTool_tool.cc"
           LIB_LIBRARIES 
             lardataobj_RawData
