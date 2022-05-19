@@ -84,6 +84,7 @@ simple_plugin(AsymExpPulseFunctionTool "tool"
 
 simple_plugin(SampledWaveformFunctionTool "tool"
   icaruscode_PMT_Algorithms
+  icaruscode_Decode_DecoderTools
   )
 
 simple_plugin(CustomPulseFunctionTool "tool"

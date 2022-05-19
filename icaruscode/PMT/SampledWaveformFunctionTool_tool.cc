@@ -13,18 +13,23 @@
 // ICARUS libraries
 #include "icaruscode/PMT/SinglePhotonPulseFunctionTool.h"
 #include "icaruscode/PMT/Algorithms/SampledWaveformFunction.h"
+#include "icaruscode/PMT/Algorithms/KeyValueParser.h"
+#include "icaruscode/Decode/DecoderTools/details/KeyValuesData.h"
 
 // LArSoft libraries
 #include "lardataalg/Utilities/quantities/electromagnetism.h" // picocoulomb
 #include "lardataalg/Utilities/quantities_fhicl.h" // nanoseconds from FHiCL
+#include "lardataalg/Utilities/quantities.h" // util::quantities::makeQuantity()
+#include "larcorealg/CoreUtils/counter.h"
 
 // framework libraries
 #include "art/Utilities/ToolConfigTable.h"
 #include "art/Utilities/ToolMacros.h"
 #include "canvas/Utilities/Exception.h"
-
-// framework libraries
+#include "fhiclcpp/types/OptionalAtom.h"
 #include "fhiclcpp/types/Atom.h"
+#include "cetlib/search_path.h"
+#include "cetlib_except/exception.h"
 
 // C/C++ standard libraries
 #include <memory> // std::unique_ptr()
@@ -43,14 +48,29 @@ namespace icarus::opdet { struct SampledWaveformFunctionTool; }
  * See `icarus::opdet::SampledWaveformFunction` for the details of the function.
  * 
  * 
+ * Waveform specification file format
+ * -----------------------------------
+ * 
+ * TODO
+ * 
+ * 
  * Configuration
  * --------------
  * 
  * Run `lar --print-description SampledWaveformFunctionTool` (or read `Config`
  * data structure) for a short explanation of the meaning of the parameters.
  * 
- * The amplitude of the function is scaled in terms of PMT gain
- * (`Gain` parameter).
+ * * `TransitTime` (time, mandatory): time from the arrival of a photoelectron
+ *     to the surface of the photodetector to the peak of the signal that the
+ *     photodetector produces. It must include the unit (e.g. `"51.5 ns"`).
+ * * `WaveformData` (path, mandatory): path to the file with the complete
+ *     information about the single photoelectron response. The file is searched
+ *     for in `FW_SEARCH_PATH` path
+ * * `Gain` (real, optional): if specified, the input must provide the nominal
+ *     gain of the response, and that response will be rescaled from its gain
+ *     value to the one specified with this parameter. If not specified,
+ *     the response is used as is.
+ *
  */
 struct icarus::opdet::SampledWaveformFunctionTool
   : public icarus::opdet::SinglePhotonPulseFunctionTool
@@ -62,12 +82,17 @@ struct icarus::opdet::SampledWaveformFunctionTool
     using Name = fhicl::Name;
     using Comment = fhicl::Comment;
     
+    fhicl::Atom<std::string> WaveformData {
+      Name("WaveformData"),
+      Comment("Path to the data file with the SPR information")
+      // mandatory
+      };
     fhicl::Atom<nanoseconds> TransitTime {
       Name("TransitTime"),
       Comment("peak time from the beginning of the waveform [ns]")
       // mandatory
       };
-    fhicl::Atom<float> Gain {
+    fhicl::OptionalAtom<float> Gain {
       Name("Gain"),
       Comment("PMT amplification gain factor")
       };
@@ -85,6 +110,10 @@ struct icarus::opdet::SampledWaveformFunctionTool
   
     private:
   
+  /// The actual function type we offer.
+  using MyFunction_t = icarus::opdet::SampledWaveformFunction<nanoseconds>;
+  
+  
   // --- BEGIN -- Virtual interface --------------------------------------------
   
   /// Returns the function that was created at construction time.
@@ -101,20 +130,211 @@ struct icarus::opdet::SampledWaveformFunctionTool
   static std::unique_ptr<PulseFunction_t> makePulseFunction
     (Config const& config);
   
+  /// Parses the specified file and returns the information on the SPR waveform.
+  static MyFunction_t::WaveformSpecs_t extractWaveformSpecification
+    (std::string const& path);
+  
 }; // icarus::opdet::SampledWaveformFunctionTool
 
 
 //------------------------------------------------------------------------------
 //--- icarus::opdet::SampledWaveformFunctionTool implementation
 //------------------------------------------------------------------------------
+
+auto icarus::opdet::SampledWaveformFunctionTool::extractWaveformSpecification
+  (std::string const& path) -> MyFunction_t::WaveformSpecs_t
+{
+  //
+  // text file parsing
+  //
+  std::ifstream srcFile { path };
+  if (!srcFile.is_open()) {
+    // quite strange, actually, since the file was found by `cet::search_path`
+    throw art::Exception{ art::errors::FileReadError }
+      << "Can't open single photoelectron response file '" << path << "'\n";
+  }
+  
+  icarus::details::KeyValueParser const parser;
+  icarus::KeyValuesData const data { parser(srcFile) };
+  srcFile.close();
+  
+  //
+  // interpretation
+  //
+  
+  auto makeException = [path]()
+    {
+      return cet::exception{ "SampledWaveformFunctionTool" }
+        << "in '" << path << "': ";
+    };
+  
+  MyFunction_t::WaveformSpecs_t specs;
+  
+  if (auto const* item = data.findItem("Name")) {
+    if (item->nValues() != 1) {
+      throw makeException() << "'Name' must have exactly 1 entry, not "
+        << item->nValues() << "!\n";
+    }
+    specs.name = item->values[0];
+  }
+  
+  if (auto const* item = data.findItem("Description")) {
+    if (item->nValues() != 1) {
+      throw makeException()
+        << "'Description' must have exactly 1 entry (possibly quoted), not "
+        << item->nValues() << "!\n";
+    }
+    specs.description = item->values[0];
+  }
+  
+  if (auto const* item = data.findItem("Date")) {
+    if (item->nValues() != 1) {
+      throw makeException()
+        << "'Date' must have exactly 1 entry (possibly quoted), not "
+        << item->nValues() << "!\n";
+    }
+    specs.date = item->values[0];
+  }
+  
+  if (auto const* item = data.findItem("Version")) {
+    if (item->nValues() != 1) {
+      throw makeException()
+        << "'Version' must have exactly 1 entry, not " << item->nValues()
+        << "!\n";
+    }
+    try {
+      specs.version = item->getNumber<unsigned int>(0);
+    }
+    catch (icarus::KeyValuesData::Error const& e) {
+      throw makeException() << "value in 'Version' ('" << item->values[0]
+        << "') can't be interpreted as version number (unsigned int):\n"
+        << e.what() << "\n";
+    }
+  }
+  
+  if (auto const* item = data.findItem("Tick")) {
+    if (item->nValues() != 1) {
+      throw makeException()
+        << "'Date' must have exactly 1 entry (possibly quoted), not "
+        << item->nValues() << "!\n";
+    }
+    try {
+      specs.sampleDuration
+        = util::quantities::makeQuantity<nanoseconds>(item->values[0]);
+    }
+    catch(std::runtime_error const& e) {
+      throw makeException()
+        << "Failed to parse 'Tick' ('" << item->values[0] << "') as a time:\n"
+        << e.what() << "\n";
+    }
+  }
+  else throw makeException() << "'Tick' entry is mandatory.\n";
+  
+  if (auto const* item = data.findItem("Gain")) {
+    if (item->nValues() != 1) {
+      throw makeException()
+        << "'Gain' must have exactly 1 entry, not " << item->nValues() << "!\n";
+    }
+    try {
+      specs.gain = item->getNumber<float>(0);
+    }
+    catch (icarus::KeyValuesData::Error const& e) {
+      throw makeException() << "value in 'Gain' ('" << item->values[0]
+        << "') can't be interpreted as a gain factor:\n"
+        << e.what() << "\n";
+    }
+  }
+  
+  
+  if (auto const* item = data.findItem("Samples")) {
+    if (item->nValues() < 2) {
+      throw makeException()
+        << "'Samples' has only " << item->nValues() << " values!!\n";
+    }
+    specs.samples.resize(item->nValues());
+    for (std::size_t const i: util::counter(item->nValues())) {
+      try {
+        specs.samples[i] = item->getNumber<float>(i);
+      }
+      catch (icarus::KeyValuesData::Error const& e) {
+        throw makeException() << "value #" << i << " in 'Samples' ('"
+          << item->values[i] << "') can't be interpreted as a voltage:\n"
+          << e.what() << "\n";
+      }
+    } // for
+  }
+  else throw makeException() << "'Samples' entry is mandatory.\n";
+  
+  
+  if (auto const* item = data.findItem("NSamples")) {
+    if (item->nValues() != 1) {
+      throw makeException()
+        << "'NSamples' must have exactly 1 entry, not " << item->nValues()
+        << "!\n";
+    }
+    unsigned int nSamples;
+    try {
+      nSamples = item->getNumber<unsigned int>(0);
+    }
+    catch (icarus::KeyValuesData::Error const& e) {
+      throw makeException() << "value in 'NSamples' ('" << item->values[0]
+        << "') can't be interpreted as a sample number (unsigned int):\n"
+        << e.what() << "\n";
+    }
+    if (specs.samples.size() != nSamples) {
+      throw makeException() << "'Samples' has " << specs.samples.size()
+        << " values, but according to 'NSamples' there should be " << nSamples
+        << "!\n";
+    }
+  }
+  
+  
+  return specs;
+} // icarus::opdet::SampledWaveformFunctionTool::extractWaveformSpecification()
+
+//------------------------------------------------------------------------------
 auto icarus::opdet::SampledWaveformFunctionTool::makePulseFunction
   (Config const& config) -> std::unique_ptr<PulseFunction_t>
 {
   
-  using MyFunction_t = icarus::opdet::SampledWaveformFunction<nanoseconds>;
+  //
+  // find and process the waveform information file
+  //
+  cet::search_path searchPath{ "FW_SEARCH_PATH" };
+  std::string waveformSpecsPath;
+  try {
+    waveformSpecsPath = searchPath.find_file(config.WaveformData());
+  }
+  catch (cet::exception& e) {
+    throw art::Exception{ art::errors::Configuration, "", e }
+      << "Error looking for the waveform data file '" << config.WaveformData()
+      << "' (configured via: '" << config.WaveformData.name() << "')\n";
+  }
+  
+  MyFunction_t::WaveformSpecs_t waveformSpecs
+    = extractWaveformSpecification(waveformSpecsPath);
+    
+  //
+  // fix the gain request
+  //
+  if ((config.Gain().value_or(0.0) != 0.0) && (waveformSpecs.gain == 0.0)) {
+    throw art::Exception(art::errors::Configuration)
+      << "The single photoelectron response '" << waveformSpecs.name
+      << "' at '" << waveformSpecsPath
+      << "' does not specify a base gain, so it can't be rescaled to "
+      << config.Gain().value()
+      << " ('" << config.Gain.name() << "' parameter)\n";
+  }
+  float const reqGain  = (config.Gain().value_or(0.0) != 0.0)
+    ? config.Gain().value(): waveformSpecs.gain;
+  
+  //
+  // create the algorithm
+  //
   return std::make_unique<MyFunction_t>(
-      config.TransitTime()  // peakTime
-    , config.Gain()         // gain
+      std::move(waveformSpecs)      // waveformSpecs
+    , config.TransitTime()          // peakTime
+    , reqGain                       // gain
     );
   
 } // icarus::opdet::SampledWaveformFunctionTool::makePulseFunction()
