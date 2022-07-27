@@ -8,11 +8,9 @@
  * Borrowed heavily from Gray Putnam's existing TrackCaloSkimmer
  */
 
-#define MF_DEBUG
-
 // ICARUS libraries
-#include "Objects/TrackTreeStoreObj.h"
 #include "icaruscode/Analysis/trigger/details/TriggerResponseManager.h"
+#include "icaruscode/Analysis/trigger/Objects/TrackTreeStoreObj.h"
 #include "icaruscode/PMT/Algorithms/PMTverticalSlicingAlg.h"
 #include "icaruscode/Decode/DataProducts/ExtraTriggerInfo.h"
 
@@ -24,6 +22,7 @@
 #include "larcorealg/Geometry/OpDetGeo.h"
 #include "larcorealg/CoreUtils/counter.h"
 #include "lardataobj/AnalysisBase/T0.h"
+#include "lardataobj/AnalysisBase/Calorimetry.h"
 #include "lardataobj/RecoBase/PFParticle.h"
 #include "lardataobj/RecoBase/Track.h"
 #include "lardataobj/RecoBase/OpFlash.h"
@@ -31,13 +30,10 @@
 #include "lardataobj/RecoBase/Hit.h"
 #include "lardataobj/RecoBase/SpacePoint.h"
 #include "lardataobj/RecoBase/TrackHitMeta.h"
-#include "lardataobj/AnalysisBase/Calorimetry.h"
 // #include "lardataobj/RecoBase/PFParticleMetadata.h"
 #include "lardataobj/RawData/OpDetWaveform.h" // raw::Channel_t
 #include "lardataobj/Simulation/BeamGateInfo.h"
 #include "lardataobj/RawData/TriggerData.h" // raw::Trigger
-#include "larcore/Geometry/Geometry.h"
-#include "larcorealg/Geometry/GeometryCore.h"
 
 // framework libraries
 #include "art_root_io/TFileService.h"
@@ -48,7 +44,7 @@
 #include "art/Framework/Principal/Run.h"
 #include "canvas/Persistency/Common/FindOneP.h"
 #include "canvas/Persistency/Common/FindManyP.h"
-// #include "canvas/Persistency/Common/Assns.h"
+#include "canvas/Persistency/Common/Assns.h"
 #include "canvas/Persistency/Common/Ptr.h"
 #include "canvas/Utilities/InputTag.h"
 #include "fhiclcpp/types/TableAs.h"
@@ -63,6 +59,7 @@
 // C/C++ libraries
 #include <vector>
 #include <string>
+#include <utility> // std::move(), std::pair
 #include <cmath>
 
 
@@ -179,16 +176,16 @@ public:
 
     fhicl::Atom<art::InputTag> TrackFitterProducer {
       Name("TrackFitterProducer"),
-	Comment("tag of the association of the tracks with the hits")
-	// mandatory                                                                                    
-	};
+        Comment("tag of the association of the tracks with the hits")
+        // mandatory                                                                                    
+        };
 
     fhicl::Atom<art::InputTag> CaloProducer {
       Name("CaloProducer"),
-	Comment("tag of the association of the tracks with the calorimetry module")
-	//mandatory
-	};
-	  
+        Comment("tag of the association of the tracks with the calorimetry module")
+        //mandatory
+        };
+          
     
     fhicl::Atom<art::InputTag> BeamGateProducer {
       Name("BeamGateProducer"),
@@ -250,17 +247,17 @@ public:
   explicit TimeTrackTreeStorage(Parameters const& p);
 
   sbn::selHitInfo makeHit(const recob::Hit &hit,
-			  unsigned hkey,
-			  const recob::Track &trk,
-			  const recob::TrackHitMeta &thm,
-			  const std::vector<art::Ptr<anab::Calorimetry>> &calo,
-			  const geo::GeometryCore *geo);
+                          unsigned hkey,
+                          const recob::Track &trk,
+                          const recob::TrackHitMeta &thm,
+                          const std::vector<art::Ptr<anab::Calorimetry>> &calo,
+                          const geo::GeometryCore *geo);
 
   float dEdx_calc(float dQdx, 
-		  float A,
-		  float B,
-		  float Wion,
-		  float E);
+                  float A,
+                  float B,
+                  float Wion,
+                  float E);
 
   void analyze(art::Event const& e) override;
   
@@ -294,7 +291,6 @@ private:
   unsigned int fRun;
   unsigned int fSubRun;
   
-  //std::vector<sbn::selTrackInfo> fTrackInfo;
   sbn::selTrackInfo fTrackInfo; //change to one entry per track instead of per event 
   sbn::selBeamInfo fBeamInfo;
   sbn::selTriggerInfo fTriggerInfo;
@@ -323,7 +319,7 @@ private:
   
   // --- BEGIN -- Trigger response branches ------------------------------------
   
-  ///< Manages filling of trigger result branches.
+  /// Manages filling of trigger result branches.
   sbn::details::TriggerResponseManager fTriggerResponses;
   
   // --- END ---- Trigger response branches ------------------------------------
@@ -471,26 +467,26 @@ void sbn::TimeTrackTreeStorage::analyze(art::Event const& e)
       //float min_flash_t0_diff = 999999.0; 
       for(unsigned int iFlash = 0; iFlash < particleFlashes.size(); ++iFlash)
       {
-	fFlashInfo = {};
-	recob::OpFlash const flashPtr = particleFlashes.at(iFlash);
-	float const flash_pe = flashPtr.TotalPE();
-	float const flash_time = flashPtr.Time();
-	float const flash_x = flashPtr.XCenter();
-	float const flash_y = flashPtr.YCenter();
-	float const flash_z = flashPtr.ZCenter();
-	float flash_t0_diff = flash_time - track_t0/1e3;
-	//if(std::abs(flash_t0_diff) < min_flash_t0_diff)
-	  //{ 
-	fFlashInfo.flash_id = iFlash;
-	fFlashInfo.sum_pe = flash_pe;
-	fFlashInfo.flash_time = flash_time;
-	fFlashInfo.flash_x = flash_x;
-	fFlashInfo.flash_y = flash_y;
-	fFlashInfo.flash_z = flash_z;
-	fFlashInfo.diff_flash_t0 = flash_t0_diff;
-	//min_flash_t0_diff = std::abs(flash_t0_diff);
-	fFlashStore.push_back(fFlashInfo);
-	//}
+        fFlashInfo = {};
+        recob::OpFlash const flashPtr = particleFlashes.at(iFlash);
+        float const flash_pe = flashPtr.TotalPE();
+        float const flash_time = flashPtr.Time();
+        float const flash_x = flashPtr.XCenter();
+        float const flash_y = flashPtr.YCenter();
+        float const flash_z = flashPtr.ZCenter();
+        float flash_t0_diff = flash_time - track_t0/1e3;
+        //if(std::abs(flash_t0_diff) < min_flash_t0_diff)
+          //{ 
+        fFlashInfo.flash_id = iFlash;
+        fFlashInfo.sum_pe = flash_pe;
+        fFlashInfo.flash_time = flash_time;
+        fFlashInfo.flash_x = flash_x;
+        fFlashInfo.flash_y = flash_y;
+        fFlashInfo.flash_z = flash_z;
+        fFlashInfo.diff_flash_t0 = flash_t0_diff;
+        //min_flash_t0_diff = std::abs(flash_t0_diff);
+        fFlashStore.push_back(fFlashInfo);
+        //}
       }
     }
     sbn::selTrackInfo trackInfo;
@@ -525,7 +521,7 @@ void sbn::TimeTrackTreeStorage::analyze(art::Event const& e)
       //hits[allHits[ih]->WireID().Plane].push_back(ih);
       sbn::selHitInfo hinfo = makeHit(*allHits[ih], allHits[ih].key(), *trackPtr, *trkmetas[ih], calorimetrycol, geom);
       if(hinfo.plane == 2)
-	fHitStore.push_back(hinfo);
+        fHitStore.push_back(hinfo);
 
     }
     float totE = 0;
@@ -534,29 +530,29 @@ void sbn::TimeTrackTreeStorage::analyze(art::Event const& e)
     for (size_t i = 0; i < fHitStore.size(); ++i)
     {
       if(fHitStore[i].dEdx > -1)
-      {	
-	float E_hit = fHitStore[i].dEdx*fHitStore[i].pitch; //energy of hit, in MeV?
-	totE += E_hit;
+      {
+        float E_hit = fHitStore[i].dEdx*fHitStore[i].pitch; //energy of hit, in MeV?
+        totE += E_hit;
       }
 
       if(fHitStore[i].dqdx > -1)
       {
-	float q_hit = fHitStore[i].integral;
-	totq_int += q_hit;
-	float q_hit_dqdx = fHitStore[i].dqdx*fHitStore[i].pitch;
-	totq_dqdx += q_hit_dqdx;
+        float q_hit = fHitStore[i].integral;
+        totq_int += q_hit;
+        float q_hit_dqdx = fHitStore[i].dqdx*fHitStore[i].pitch;
+        totq_dqdx += q_hit_dqdx;
       }
       /*
       if(fHitStore[i].pitch > 1 && fHitStore[i].dqdx < 100)
       {
-	std::cout << "In strange peak! Event: " << fEvent << " Track ID: " << trackInfo.trackID << " Hit ID: " << i << " Total Number of hits: " << fHitStore.size() << std::endl;
+        std::cout << "In strange peak! Event: " << fEvent << " Track ID: " << trackInfo.trackID << " Hit ID: " << i << " Total Number of hits: " << fHitStore.size() << std::endl;
       }
       */
     }
     trackInfo.energy = totE;
     trackInfo.charge_int = totq_int;
     trackInfo.charge_dqdx = totq_dqdx;
-    fTrackInfo = trackInfo;
+    fTrackInfo = std::move(trackInfo);
     /*
     for(size_t trajp = 0; trajp < trackPtr->NumberTrajectoryPoints()-1; ++trajp)
     {
@@ -567,7 +563,6 @@ void sbn::TimeTrackTreeStorage::analyze(art::Event const& e)
         
     }
     */
-    //fTrackInfo.push_back(trackInfo);
     
     triggerResponseExtractors.fetch(iPart); // TODO no check performed; need to find a way
   
@@ -575,19 +570,18 @@ void sbn::TimeTrackTreeStorage::analyze(art::Event const& e)
     ++fTotalProcessed;
     fStoreTree->Fill();
   } // for particle
-  //mf::LogInfo(fLogCategory) << "Particles Processed: " << processed
-  //mf::LogTrace(fLogCategory) << "Total Particles Processed: " << fTotalProcessed;
-  //fStoreTree->Fill();
-  //fTrackInfo.clear();
+  
+  mf::LogInfo(fLogCategory) << "Particles Processed: " << processed;
 
 } // sbn::TimeTrackTreeStorage::analyze()
 
+
 sbn::selHitInfo sbn::TimeTrackTreeStorage::makeHit(const recob::Hit &hit,
-			unsigned hkey,
-			const recob::Track &trk,
-			const recob::TrackHitMeta &thm,			   
-			const std::vector<art::Ptr<anab::Calorimetry>> &calo,
-			const geo::GeometryCore *geo)
+                                                   unsigned hkey,
+                                                   const recob::Track &trk,
+                                                   const recob::TrackHitMeta &thm,
+                                                   const std::vector<art::Ptr<anab::Calorimetry>> &calo,
+                                                   const geo::GeometryCore *geo)
 {
 
   // TrackHitInfo to save
@@ -607,50 +601,51 @@ sbn::selHitInfo sbn::TimeTrackTreeStorage::makeHit(const recob::Hit &hit,
   hinfo.start = hit.StartTick();
   hinfo.id = (int)hkey;
 
-  bool badhit = (thm.Index() == std::numeric_limits<unsigned int>::max()) ||
+  bool const badhit = (thm.Index() == std::numeric_limits<unsigned int>::max()) ||
     (!trk.HasValidPoint(thm.Index()));
 
   //hinfo.ontraj = !badhit;
   // Save trajectory information if we can
   if(!badhit)
   {
-    geo::Point_t loc = trk.LocationAtPoint(thm.Index());
+    geo::Point_t const& loc = trk.LocationAtPoint(thm.Index());
     hinfo.px = loc.X();
     hinfo.py = loc.Y();
     hinfo.pz = loc.Z();
   
-    geo::Vector_t dir = trk.DirectionAtPoint(thm.Index());
+    geo::Vector_t const& dir = trk.DirectionAtPoint(thm.Index());
     hinfo.dirx = dir.X();
     hinfo.diry = dir.Y();
     hinfo.dirz = dir.Z();
-  // And determine if the Hit is on a Calorimetry object
+    
+    // And determine if the Hit is on a Calorimetry object
     for (const art::Ptr<anab::Calorimetry> &c: calo) {
       if (c->PlaneID().Plane != hinfo.plane) continue;
       
       // Found the plane! Now find the hit:
       for (unsigned i_calo = 0; i_calo < c->dQdx().size(); i_calo++) {
-	if (c->TpIndices()[i_calo] == hkey) { // "TpIndices" match to the hit key
-	  // Fill the calo information associated with the hit 
-	  hinfo.oncalo = true;
-	  hinfo.pitch = c->TrkPitchVec()[i_calo];
-	  hinfo.dqdx = c->dQdx()[i_calo];
-	  hinfo.dEdx = dEdx_calc(hinfo.dqdx, fMODA, fMODB, fWion, fEfield);
-	  hinfo.rr = c->ResidualRange()[i_calo];
-	  break;
-	}
-      }
-    break;
-    }
+        // "TpIndices" match to the hit key
+        if (c->TpIndices()[i_calo] != hkey) continue;
+        // Fill the calo information associated with the hit 
+        hinfo.oncalo = true;
+        hinfo.pitch = c->TrkPitchVec()[i_calo];
+        hinfo.dqdx = c->dQdx()[i_calo];
+        hinfo.dEdx = dEdx_calc(hinfo.dqdx, fMODA, fMODB, fWion, fEfield);
+        hinfo.rr = c->ResidualRange()[i_calo];
+        break;
+      } // for i_calo
+      break;
+    } // for c
   }
   
   return hinfo;
 }
 
 float sbn::TimeTrackTreeStorage::dEdx_calc(float dQdx,
-					   float A,
-					   float B,
-					   float Wion,
-					   float E) 
+                                           float A,
+                                           float B,
+                                           float Wion,
+                                           float E) 
 {
   float LAr_density_gmL = 1.389875; //LAr density in g/cm^3
   float alpha = A;
