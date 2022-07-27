@@ -103,7 +103,7 @@ class sbn::details::TriggerResponseManager
   struct TriggerInfo_t {
     
     /// ROOT TTree specification for this data structure (leaf list).
-    static std::string const TriggerResponseBranchStructure;
+    static std::string const& TriggerResponseBranchStructure();
     
     /// Mnemonic value for absence of trigger time information
     static constexpr double NotTriggeredTime = -999999.0;
@@ -215,8 +215,6 @@ class sbn::details::TriggerResponseManager
 }; // class sbn::details::TriggerResponseManager
 
 // -----------------------------------------------------------------------------
-
-
 
 
 #endif // ICARUSCODE_ANALYSIS_TRIGGER_DETAILS_TRIGGERRESPONSEMANAGER_H

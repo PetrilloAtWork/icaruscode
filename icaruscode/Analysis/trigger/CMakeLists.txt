@@ -1,4 +1,3 @@
-#link_directories( $ENV{ROOTSYS}/lib)
 add_subdirectory(Objects)
 add_subdirectory(scripts)
 
@@ -9,18 +8,18 @@ art_make(
     "BeamGateInfoFromTracks_module.cc"
     "TimeTrackTreeStorage_module.cc"
   LIB_LIBRARIES
+    larcorealg_Geometry
     lardataobj_RawData
     art::Framework_Principal
     art::Framework_Core
-    canvas
-    messagefacility::MF_MessageLogger
+    canvas::canvas
     ROOT::Tree
   )
 
 simple_plugin(TimedTrackSelector module
   lardataobj_AnalysisBase
   lardataobj_RecoBase
-  ${MF_MESSAGELOGGER}
+  messagefacility::MF_MessageLogger
   ROOT::Core
   )
 
@@ -33,27 +32,24 @@ simple_plugin(BeamGateInfoFromTracks  module
 simple_plugin(TimeTrackTreeStorage module
   icaruscode_Analysis_trigger
   icaruscode_PMT_Algorithms
+  icaruscode_Decode_DataProducts
+  larcore_Geometry_Geometry_service
+  larcorealg_Geometry
   lardataobj_AnalysisBase
   lardataobj_RecoBase
-  lardataobj_Simulation
   lardataobj_RawData
-  ${MF_MESSAGELOGGER}
+  lardataobj_Simulation
+  ROOT::Tree
   ROOT::Core
-  ${ROOT_EVE_LIB_LIST}
-  ${ROOT_X3d}
-  ${ROOT_BASIC_LIB_LIST}
-  art_root_io_tfile_support
-  art_root_io
-  art_root_io_dict
-  ${ART_FRAMEWORK_CORE}
-  ${ART_FRAMEWORK_SERVICES}
-  ${ART_FRAMEWORK_SERVICES_REGISTRY}
-  ${ART_ROOT_IO_TFILESERVICE_SERVICE}
-  ${ART_FRAMEWORK_PRINCIPAL}
-  art_Persistency_Common
-  art_Utilities canvas
+  art_root_io::TFileService_service
+  art::Framework_Services_Registry
+  art::Framework_Core
+  art::Framework_Principal
+  canvas::canvas
+  fhiclcpp::fhiclcpp
+  messagefacility::MF_MessageLogger
 )
-		
+
 install_headers()
 install_source()
 install_fhicl()

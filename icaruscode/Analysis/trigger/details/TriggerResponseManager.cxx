@@ -102,9 +102,14 @@ void sbn::details::TriggerResponseManager::Extractors::fetchBranch(
 // -----------------------------------------------------------------------------
 // ---  sbn::details::TriggerResponseManager
 // -----------------------------------------------------------------------------
-std::string const
-sbn::details::TriggerResponseManager::TriggerInfo_t::TriggerResponseBranchStructure
-  { "time/D:gateStart/D:fired/O" };
+std::string const&
+sbn::details::TriggerResponseManager::TriggerInfo_t::TriggerResponseBranchStructure()
+{
+  // using a static std::string constant data member caused segmentation fault
+  // at the closure of the program; so we get just a tiny bit less static.
+  static std::string const specs { "time/D:gateStart/D:fired/O" };
+  return specs;
+}
 
 
 // -----------------------------------------------------------------------------
@@ -162,7 +167,7 @@ auto sbn::details::TriggerResponseManager::buildTriggerResponseBranch
   
   branchInfo.branch = tree.Branch(
     spec.name.c_str(), branchInfo.data.get(),
-    TriggerInfo_t::TriggerResponseBranchStructure.c_str()
+    TriggerInfo_t::TriggerResponseBranchStructure().c_str()
     );
   
   return branchInfo;
