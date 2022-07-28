@@ -240,6 +240,12 @@ public:
       0.5
       };
     
+    fhicl::Atom<bool> ForceDowngoing {
+      Name("ForceDowngoing"),
+      Comment("force all tracks to be downgoing, flipping them when necessary"),
+      false
+      };
+    
   }; // Config
   
   using Parameters = art::EDAnalyzer::Table<Config>;
@@ -282,6 +288,7 @@ private:
   float const fMODB;
   float const fWion;
   float const fEfield;
+  bool const fForceDowngoing; ///< Whether to force all tracks to be downgoing.
   
   // --- END ---- Configuration parameters -------------------------------------
 
@@ -364,6 +371,7 @@ sbn::TimeTrackTreeStorage::TimeTrackTreeStorage(Parameters const& p)
   , fMODB             { p().MODB() }
   , fWion             { p().Wion() }
   , fEfield           { p().Efield() }
+  , fForceDowngoing    { p().ForceDowngoing() }
   // algorithms
   , fPMTwalls         { computePMTwalls() }
   , fStoreTree {
@@ -494,15 +502,25 @@ void sbn::TimeTrackTreeStorage::analyze(art::Event const& e)
     trackInfo.t0 = track_t0/1e3; //is this in nanoseconds? Will convert to seconds so I can understand better
     //if(track_t0/1e3 < 10 && track_t0/1e3 > -10)
     //mf::LogTrace(fLogCategory) << track_t0/1e3 << " Run is: " << fRun << " SubRun is: " << fSubRun << " Event is: " << fEvent << " Track ID is: " << trackPtr->ID();
-    trackInfo.start_x = trackPtr->Start().X();
-    trackInfo.start_y = trackPtr->Start().Y();
-    trackInfo.start_z = trackPtr->Start().Z();
-    trackInfo.end_x = trackPtr->End().X();
-    trackInfo.end_y = trackPtr->End().Y();
-    trackInfo.end_z = trackPtr->End().Z();
-    trackInfo.dir_x = trackPtr->StartDirection().X();
-    trackInfo.dir_y = trackPtr->StartDirection().Y();
-    trackInfo.dir_z = trackPtr->StartDirection().Z();
+    
+    recob::tracking::Point_t startPoint = trackPtr->Start();
+    recob::tracking::Point_t endPoint = trackPtr->End();
+    recob::tracking::Vector_t startDir = trackPtr->StartDirection();
+    bool const flipTrack = fForceDowngoing && (startDir.Y() > 0.0);
+    if (flipTrack) {
+      std::swap(startPoint, endPoint);
+      startDir = -trackPtr->EndDirection();
+    }
+    
+    trackInfo.start_x = startPoint.X();
+    trackInfo.start_y = startPoint.Y();
+    trackInfo.start_z = startPoint.Z();
+    trackInfo.end_x = endPoint.X();
+    trackInfo.end_y = endPoint.Y();
+    trackInfo.end_z = endPoint.Z();
+    trackInfo.dir_x = startDir.X();
+    trackInfo.dir_y = startDir.Y();
+    trackInfo.dir_z = startDir.Z();
     trackInfo.length = trackPtr->Length();
         
     //Animesh added hit information - 2/8/2022
