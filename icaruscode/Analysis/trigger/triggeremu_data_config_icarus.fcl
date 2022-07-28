@@ -181,9 +181,9 @@ triggeremu_data_config_icarus.settings.SlidingWindowTriggerPatternsWindowPair: [
 
 # * configuration with 3 windows per PMT wall (12 windows overall)
 triggeremu_data_config_icarus.settings.EnabledWindowsTilingE:
-  [ 0, 1, 2, 3,  4,  5 ]
+  [  0,  1,  2,  3,  4,  5 ]
 triggeremu_data_config_icarus.settings.EnabledWindowsTilingW:
-  [ 6, 7, 8, 9, 10, 11 ]
+  [  6,  7,  8,  9, 10, 11 ]
   
 # * configuration with 5 windows per PMT wall, overlapping (20 windows overall)
 triggeremu_data_config_icarus.settings.EnabledWindowsSlidingE:
