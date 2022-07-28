@@ -6,6 +6,14 @@
 
 namespace sbn {
 
+  /**
+   * 
+   * Middle point is cutting the track in two chunks with the same length.
+   * 
+   * The part "before" the cathode is always the one at lower _x_ coordinates
+   * than the cathode itself.
+   * 
+   */
   struct selTrackInfo {
     static constexpr float NoPosition = -999999.0;
     
@@ -17,6 +25,20 @@ namespace sbn {
     float end_x = NoPosition;
     float end_y = NoPosition;
     float end_z = NoPosition;
+    float middle_x = NoPosition; ///< Half-way distance along the trajectory.
+    float middle_y = NoPosition; ///< Half-way distance along the trajectory.
+    float middle_z = NoPosition; ///< Half-way distance along the trajectory.
+    float atcathode_x = NoPosition; ///< Cathode crossing point of trajectory.
+    float atcathode_y = NoPosition; ///< Cathode crossing point of trajectory.
+    float atcathode_z = NoPosition; ///< Cathode crossing point of trajectory.
+    float midbeforecathode_x = NoPosition; ///< Midpoint of subpath before cathode.
+    float midbeforecathode_y = NoPosition; ///< Midpoint of subpath before cathode.
+    float midbeforecathode_z = NoPosition; ///< Midpoint of subpath before cathode.
+    float midaftercathode_x = NoPosition; ///< Midpoint of subpath after cathode.
+    float midaftercathode_y = NoPosition; ///< Midpoint of subpath after cathode.
+    float midaftercathode_z = NoPosition; ///< Midpoint of subpath after cathode.
+    float beforecathode = -1; ///< Track path length before cathode (lower _x_).
+    float aftercathode = -1; ///< Track path length before cathode (higher _x_).
     float length = -1.0;
     float energy = NoPosition;
     float charge_int = NoPosition;

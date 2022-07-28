@@ -10,9 +10,11 @@
 
 // ICARUS libraries
 #include "icaruscode/Analysis/trigger/details/TriggerResponseManager.h"
+#include "icaruscode/Analysis/trigger/details/CathodeCrossingUtils.h"
 #include "icaruscode/Analysis/trigger/Objects/TrackTreeStoreObj.h"
 #include "icaruscode/PMT/Algorithms/PMTverticalSlicingAlg.h"
 #include "icaruscode/Decode/DataProducts/ExtraTriggerInfo.h"
+#include "icaruscode/Utilities/TrajectoryUtils.h"
 
 // LArSoft libraries
 // #include "lardata/DetectorInfoServices/DetectorClocksService.h"
@@ -61,6 +63,27 @@
 #include <string>
 #include <utility> // std::move(), std::pair
 #include <cmath>
+
+
+namespace {
+  
+  // ---------------------------------------------------------------------------
+  /// Returns the sequence of `track` valid points (as geometry points).
+  std::vector<geo::Point_t> extractTrajectory
+    (recob::Track const& track, bool reverse = false)
+  {
+    std::vector<geo::Point_t> trackPath;
+    std::size_t index = track.FirstValidPoint();
+    while (index != recob::TrackTrajectory::InvalidIndex) {
+      trackPath.push_back(track.LocationAtPoint(index));
+      if (++index >= track.NPoints()) break;
+      index = track.NextValidPoint(index);
+    }
+    if (reverse) std::reverse(trackPath.begin(), trackPath.end());
+    return trackPath;
+  } // extractTrajectory()
+  
+} // local namespace
 
 
 // -----------------------------------------------------------------------------
@@ -522,7 +545,62 @@ void sbn::TimeTrackTreeStorage::analyze(art::Event const& e)
     trackInfo.dir_y = startDir.Y();
     trackInfo.dir_z = startDir.Z();
     trackInfo.length = trackPtr->Length();
-        
+    
+    std::vector<geo::Point_t> const trackPath
+      = extractTrajectory(*trackPtr, flipTrack);
+    geo::Point_t const middlePoint
+      = util::pathMiddlePoint(trackPath.begin(), std::prev(trackPath.end()));
+    trackInfo.middle_x = middlePoint.X();
+    trackInfo.middle_y = middlePoint.Y();
+    trackInfo.middle_z = middlePoint.Z();
+    
+    //
+    // determination of cathode crossing
+    //
+    // this determination should be independent of track direction;
+    icarus::CathodeDesc_t const cathode
+      = icarus::findTPCcathode(middlePoint, *geom);
+    
+    icarus::CathodeCrossing_t crossInfo
+      = icarus::detectCrossing(trackPath.begin(), trackPath.end(), cathode);
+    
+    if (crossInfo) {
+      
+      auto itBeforeCathode = trackPath.begin() + crossInfo.indexBefore;
+      auto itAfterCathode = trackPath.begin() + crossInfo.indexAfter;
+      
+      geo::Point_t middleBeforeCathode
+        = util::pathMiddlePoint(trackPath.begin(), itBeforeCathode);
+      geo::Point_t middleAfterCathode
+        = util::pathMiddlePoint(itAfterCathode, std::prev(trackPath.end()));
+      
+        // "before" is defined as "smaller x", so:
+      if (distance(middleAfterCathode, cathode) < 0.0) {
+        assert(distance(middleBeforeCathode, cathode) >= 0.0);
+        std::swap(crossInfo.indexBefore, crossInfo.indexAfter);
+        std::swap(itBeforeCathode, itAfterCathode);
+        std::swap(crossInfo.before, crossInfo.after);
+        std::swap(middleBeforeCathode, middleAfterCathode);
+      }
+      
+      trackInfo.beforecathode = crossInfo.before;
+      trackInfo.aftercathode = crossInfo.after;
+      
+      geo::Point_t const& atCathodePoint = crossInfo.crossingPoint;
+      trackInfo.atcathode_x = atCathodePoint.X();
+      trackInfo.atcathode_y = atCathodePoint.Y();
+      trackInfo.atcathode_z = atCathodePoint.Z();
+      
+      trackInfo.midbeforecathode_x = middleBeforeCathode.X();
+      trackInfo.midbeforecathode_y = middleBeforeCathode.Y();
+      trackInfo.midbeforecathode_z = middleBeforeCathode.Z();
+      
+      trackInfo.midaftercathode_x = middleAfterCathode.X();
+      trackInfo.midaftercathode_y = middleAfterCathode.Y();
+      trackInfo.midaftercathode_z = middleAfterCathode.Z();
+      
+    } // if crossing
+    
     //Animesh added hit information - 2/8/2022
 
     unsigned int plane = 0; //hit plane number
