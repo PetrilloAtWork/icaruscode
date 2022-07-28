@@ -407,13 +407,9 @@ void sbn::TimeTrackTreeStorage::analyze(art::Event const& e)
 {
   const geo::GeometryCore *geom = lar::providerFrom<geo::Geometry>();
   // Implementation of required member function here.
-  unsigned int const run = e.run();
-  unsigned int const subrun = e.subRun();
-  unsigned int const event = e.event(); 
-  
-  fEvent = event;
-  fSubRun = subrun;
-  fRun = run;
+  fEvent = e.event();
+  fSubRun = e.subRun();
+  fRun = e.run();
   fBeamInfo = {};
   
   std::vector<art::Ptr<recob::PFParticle>> const& pfparticles = e.getProduct<std::vector<art::Ptr<recob::PFParticle>>> (fT0selProducer);
@@ -425,11 +421,14 @@ void sbn::TimeTrackTreeStorage::analyze(art::Event const& e)
   std::vector<sim::BeamGateInfo> const& beamgate = e.getProduct<std::vector<sim::BeamGateInfo>> (fBeamGateProducer);
   if(beamgate.empty())
     mf::LogWarning(fLogCategory) << "No Beam Gate Information!";
-  if(beamgate.size() > 1)
-    mf::LogWarning(fLogCategory) << "Event has multiple beam gate info labels! (maybe this changes later to be standard)";
-  fBeamInfo.beamGateSimStart = beamgate[0].Start();
-  fBeamInfo.beamGateDuration = beamgate[0].Width();
-  fBeamInfo.beamGateType = beamgate[0].BeamType();
+  else {
+    if(beamgate.size() > 1)
+      mf::LogWarning(fLogCategory) << "Event has multiple beam gate info labels! (maybe this changes later to be standard)";
+    sim::BeamGateInfo const& bg = beamgate[0];
+    fBeamInfo.beamGateSimStart = bg.Start();
+    fBeamInfo.beamGateDuration = bg.Width();
+    fBeamInfo.beamGateType = bg.BeamType();
+  }
 
   sbn::ExtraTriggerInfo const &triggerinfo = e.getProduct<sbn::ExtraTriggerInfo> (fTriggerProducer);
   //fTriggerInfo.beamType = triggerinfo.sourceType;
@@ -454,13 +453,14 @@ void sbn::TimeTrackTreeStorage::analyze(art::Event const& e)
   unsigned int processed = 0;
   for(unsigned int iPart = 0; iPart < pfparticles.size(); ++iPart)
   {
+    art::Ptr<recob::Track> const& trackPtr = particleTracks.at(iPart);
+    if(trackPtr.isNull()) continue;
+    
     fFlashInfo = {};
     fFlashStore.clear();
     fHitStore.clear();
-    art::Ptr<recob::Track> const trackPtr = particleTracks.at(iPart);
-    if(trackPtr.isNull()) continue;
     
-    art::Ptr<anab::T0> const t0Ptr = t0Tracks.at(iPart);
+    art::Ptr<anab::T0> const& t0Ptr = t0Tracks.at(iPart);
     float const track_t0 = t0Ptr->Time();
     if(!particleFlashes.empty())
     {
