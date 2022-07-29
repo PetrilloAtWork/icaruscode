@@ -2,6 +2,7 @@
 art_make(
   EXCLUDE
     "SaveConfigurationIntoTFile_module.cc"
+    "DumpProvenanceTree_module.cc"
     "DummyFilter_module.cc"
     "DummyProducer_module.cc"
     "DummyAnalyzer_module.cc"
@@ -17,6 +18,8 @@ art_make(
     ROOT::Core
     ROOT::RIO
 )
+
+simple_plugin(DumpProvenanceTree "module")
 
 simple_plugin(SaveConfigurationIntoTFile "module"
               ${ART_ROOT_IO_TFILESERVICE_SERVICE}

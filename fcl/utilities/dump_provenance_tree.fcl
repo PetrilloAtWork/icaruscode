@@ -1,0 +1,30 @@
+#
+# File:    dump_provenance_tree.fcl
+# Purpose: Prints a tre tree of provenance of data products in an event.
+# Author:  Gianluca Petrillo (petrillo@slac.stanford.edu)
+# Date:    May 5, 2021
+#
+#
+
+#include "messageservice.fcl"
+
+process_name: DumpProv
+
+services: {
+  message: @local::standard_info  # in "messageservice.fcl" from LArSoft
+}
+
+source: {
+  module_type: RootInput
+  maxEvents:   1  # by default print only the first event
+}
+
+physics: {
+  dumper: [ dumpprovenance ]
+}
+
+outputs.dumpprovenance: {
+  
+  module_type: "icaruscode/Utilities/DumpProvenanceTree"
+  
+} # dumpprovenance
