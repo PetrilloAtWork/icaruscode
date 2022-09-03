@@ -5,9 +5,15 @@ art_make(
     "DummyFilter_module.cc"
     "DummyProducer_module.cc"
     "DuplicateEventTracker_service.cc"
+    "DriftTracks_module.cc"
     "AssociateTracksToT0_module.cc"
   LIB_LIBRARIES
-    ${ART_ROOT_IO_ROOTDB}
+    lardataalg::DetectorInfo
+    larcorealg::Geometry
+    lardataobj::RecoBase
+    art_root_io::RootDB
+    canvas::canvas
+    messagefacility::MF_MessageLogger
     SQLite::SQLite3
     cetlib_except
     cetlib
@@ -39,6 +45,17 @@ simple_plugin(DuplicateEventTracker "service"
               ${MF_MESSAGELOGGER}
 )
 
+
+simple_plugin(DriftTracks "module"
+              icaruscode_Utilities
+              larcore::Geometry_Geometry_service
+              lardataalg::DetectorInfo
+              larcorealg::Geometry
+              lardataobj::AnalysisBase
+              lardataobj::RecoBase
+              messagefacility::MF_MessageLogger
+              fhiclcpp::fhiclcpp
+)
 
 simple_plugin(AssociateTracksToT0 "module"
               lardataobj::AnalysisBase
