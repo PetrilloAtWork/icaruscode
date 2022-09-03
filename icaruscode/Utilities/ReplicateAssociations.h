@@ -32,7 +32,7 @@ namespace util {
    * @return a copy of `assns` with a modified left side
    * 
    * This function creates a new `art::Assns` association with the left pointer
-   * `ptr` of each of the links replaced by its correspondent `leftMap.at(ptr)`.
+   * `ptr` of each of the links replaced by its correspondent `leftMap(ptr)`.
    * 
    * In general, `leftMap` should support the mapping of all the left pointers
    * in `assns`. In practice, the `leftMap` object may decide how to deal with
@@ -104,7 +104,7 @@ auto util::replaceAssnsFirst(Assns const& assns, LeftMap const& leftMap) {
   constexpr bool hasMetadata = AssnsTraits_t::hasMetadata;
   
   using destLeftPtr_t
-    = std::decay_t<decltype(leftMap.at(std::declval<art::Ptr<left_t>>()))>;
+    = std::decay_t<decltype(leftMap(std::declval<art::Ptr<left_t>>()))>;
   static_assert(details::isArtPtr_v<destLeftPtr_t>);
   using destLeft_t = typename destLeftPtr_t::value_type;
   using destAssns_t = art::Assns<destLeft_t, right_t, data_t>;
@@ -113,7 +113,7 @@ auto util::replaceAssnsFirst(Assns const& assns, LeftMap const& leftMap) {
   destAssns_t replicaAssns;
   for (auto const& assn: assns) {
     
-    destLeftPtr_t destLeft = leftMap.at(assn.first);
+    destLeftPtr_t destLeft = leftMap(assn.first);
     
     if constexpr(hasMetadata) {
       replicaAssns.addSingle(std::move(destLeft), assn.second, *(assn.data));

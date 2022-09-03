@@ -703,8 +703,10 @@ void DriftTracks::produce(art::Event& event, art::ProcessingFrame const&) {
   //
   // remap the associations
   //
-  replicateAndPutAssociations(event, fAssnHitWithMeta, shiftedTrackPtrs);
-  replicateAndPutAssociations(event, fAssnPFParticle, shiftedTrackPtrs);
+  auto const replacer = [&shiftedTrackPtrs](auto const& track)
+    { return shiftedTrackPtrs.at(track); };
+  replicateAndPutAssociations(event, fAssnHitWithMeta, replacer);
+  replicateAndPutAssociations(event, fAssnPFParticle, replacer);
   
 } // DriftTracks::produce()
 
