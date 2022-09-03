@@ -5,6 +5,7 @@ art_make(
     "DummyFilter_module.cc"
     "DummyProducer_module.cc"
     "DuplicateEventTracker_service.cc"
+    "AssociateTracksToT0_module.cc"
   LIB_LIBRARIES
     ${ART_ROOT_IO_ROOTDB}
     SQLite::SQLite3
@@ -37,6 +38,15 @@ simple_plugin(DuplicateEventTracker "service"
               ${ART_FRAMEWORK_PRINCIPAL}
               ${MF_MESSAGELOGGER}
 )
+
+
+simple_plugin(AssociateTracksToT0 "module"
+              lardataobj::AnalysisBase
+              lardataobj::RecoBase
+              messagefacility::MF_MessageLogger
+              fhiclcpp::fhiclcpp
+)
+
 
 simple_plugin(DummyFilter "module")
 simple_plugin(DummyProducer "module")
