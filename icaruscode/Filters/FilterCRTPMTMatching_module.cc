@@ -22,6 +22,7 @@
 #include "larcore/Geometry/Geometry.h"
 #include "larcorealg/Geometry/GeometryCore.h"
 #include "lardata/DetectorInfoServices/DetectorClocksService.h"
+#include "lardataalg/Utilities/MultipleChoiceSelection.h"
 
 // Data product includes
 
@@ -181,8 +182,6 @@ icarus::crt::CRTMatches CRTHitmatched(
   return {std::move(enteringCRTHits), std::move(exitingCRTHits), MatchType};
 }
 
-class icarus::crt::FilterCRTPMTMatching : public art::EDFilter {
-
 /**
  * @brief Rejects events with only incoming particles in time with the beam.
  *
@@ -201,9 +200,20 @@ class icarus::crt::FilterCRTPMTMatching : public art::EDFilter {
  * AND of the flashes classification.
  * For questions and maintenance ask Francesco Poppi.
  */
+class icarus::crt::FilterCRTPMTMatching : public art::EDFilter {
 
  public:
   using CRTHit = sbn::crt::CRTHit;
+  
+  enum class FilterLevel {
+    Loose,  ///< Loose cut: doesn't actually cut anything.
+    Medium, ///< Medium cut.
+    Tight   ///< Tight cut.
+  };
+
+  /// Helper to convert the filter level from and to a string.
+  static util::MultipleChoiceSelection<FilterLevel> const FilterLevelSelector;
+  
 
   explicit FilterCRTPMTMatching(fhicl::ParameterSet const& p);
   // Required functions.
@@ -243,7 +253,7 @@ class icarus::crt::FilterCRTPMTMatching : public art::EDFilter {
   uint64_t m_trigger_gate_diff;
   uint64_t m_gate_width;
 
-  std::string fFilterLevel;  // Filter level, default is loose
+  FilterLevel fFilterLevel;  ///< Filter level, default is `FilterLevel::Loose`.
   int fnOpHitToTrigger;  // Number of OpHit above threshold to mimic the trigger
   double fTimeOfFlightInterval;  // Time of Flight interval to find the match
   bool fOutputTree;              // Output tree or not
@@ -288,6 +298,13 @@ class icarus::crt::FilterCRTPMTMatching : public art::EDFilter {
   geo::GeometryCore const* fGeometryService;  ///< pointer to Geometry provider.
 };
 
+util::MultipleChoiceSelection<icarus::crt::FilterCRTPMTMatching::FilterLevel> const
+icarus::crt::FilterCRTPMTMatching::FilterLevelSelector {
+    { FilterLevel::Loose,  "Loose"  }
+  , { FilterLevel::Medium, "Medium" }
+  , { FilterLevel::Tight,  "Tight"  }
+};
+
 icarus::crt::FilterCRTPMTMatching::FilterCRTPMTMatching(
     fhicl::ParameterSet const& p)
     : EDFilter{p},
@@ -299,7 +316,7 @@ icarus::crt::FilterCRTPMTMatching::FilterCRTPMTMatching(
       fTriggerLabel(p.get<art::InputTag>("TriggerLabel", "daqTrigger")),
       fTriggerConfigurationLabel(
           p.get<art::InputTag>("TriggerConfiguration", "triggerconfig")),
-      fFilterLevel(p.get<std::string>("FilterLevel", "loose")),
+      fFilterLevel(FilterLevelSelector.parse(p.get<std::string>("FilterLevel", "Loose")).value()),
       fnOpHitToTrigger(p.get<int>("nOpHitToTrigger")),
       fTimeOfFlightInterval(p.get<double>("TimeOfFlightInterval")),
       fOutputTree(p.get<bool>("MakeMatchTree", true)),
@@ -314,6 +331,10 @@ icarus::crt::FilterCRTPMTMatching::FilterCRTPMTMatching(
       fNuMIinBeamMax(p.get<double>("NuMIinBeamMax")),
       fGeometryService(lar::providerFrom<geo::Geometry>()) {
   fFlashLabels = { fOpFlashModuleLabel0, fOpFlashModuleLabel1 };
+  
+  mf::LogInfo("FilterCRTPMTMatching")
+    << "Filter level: " << FilterLevelSelector.get(fFilterLevel).name();
+  
   if (fOutputTree) {
     art::ServiceHandle<art::TFileService> tfs;
     fMatchTree =
@@ -383,10 +404,7 @@ bool icarus::crt::FilterCRTPMTMatching::filter(art::Event& e) {
   std::vector<art::Ptr<CRTHit>> crtHitList;
   if (e.getByLabel(fCrtHitModuleLabel, crtHitListHandle))
     art::fill_ptr_vector(crtHitList, crtHitListHandle);
-  if ((fFilterLevel != "loose") && (fFilterLevel != "medium") && (fFilterLevel != "tight"))
-    throw art::Exception{ art::errors::Configuration } << "Invalid CRT/PMT filter level: '" << fFilterLevel << "'\n";
 
-  mf::LogInfo("FilterCRTPMTMatching::FilteringLevel ") << fFilterLevel;
   std::vector<FlashType> thisEventFlashes;
   for (art::InputTag const& flashLabel : fFlashLabels) {
     auto const flashHandle =
@@ -517,10 +535,14 @@ bool icarus::crt::FilterCRTPMTMatching::filter(art::Event& e) {
     }
   }
   bool hasOnlyCosmics = false;
-  if (fFilterLevel == "loose")
+  switch (fFilterLevel) {
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  case FilterLevel::Loose:
     hasOnlyCosmics = false;  // By default, with loose Filtering, everything is
-                         // "intersting", nothing tagged as clear cosmic
-  else if (fFilterLevel == "medium") {
+                             // "interesting", nothing tagged as clear cosmic
+    break;
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  case FilterLevel::Medium:
     hasOnlyCosmics = true;
     for (const auto& h : thisEventFlashes) {
       bool isCosmic = false;
@@ -534,7 +556,9 @@ bool icarus::crt::FilterCRTPMTMatching::filter(art::Event& e) {
         isCosmic = false;
       hasOnlyCosmics = hasOnlyCosmics && isCosmic;
     }
-  } else if (fFilterLevel == "tight") {
+    break;
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  case FilterLevel::Tight:
     // With Tight filter, everything (inTime) associated with a CRT Hit before
     // the Flash is filtered as clear cosmic
     hasOnlyCosmics = true;
@@ -547,7 +571,13 @@ bool icarus::crt::FilterCRTPMTMatching::filter(art::Event& e) {
         isCosmic = false;
       hasOnlyCosmics = hasOnlyCosmics && isCosmic;
     }
-  }
+    break;
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  default:
+    throw art::Exception{ art::errors::LogicError }
+      << "Unexpected value of filter level.\n";
+  } // switch
+  
   fFiltered = hasOnlyCosmics;
   if (fMatchTree) {
     EventCRTPMT thisEvent = {/* .Filter = */ hasOnlyCosmics, // C++20: restore initializers
