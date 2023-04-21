@@ -124,7 +124,7 @@ bool flashInTime(double flashTime, int gateType, double gateDiff,
   double activeGate = gateWidth /*- vetoOffset*/;
 
   double relFlashTime = flashTime + gateDiff / 1000. /*- vetoOffset*/;
-  mf::LogDebug("FilterCRTPMTMatching FlashInTime")
+  mf::LogDebug("FilterCRTPMTMatching")
       << "Gate Diff " << gateDiff / 1000 << " Ftime+gateDiff "
       << flashTime + gateDiff / 1000. << " " << activeGate;
 
@@ -382,7 +382,7 @@ bool icarus::crt::FilterCRTPMTMatching::beginRun(art::Run& r) {
 }
 
 bool icarus::crt::FilterCRTPMTMatching::filter(art::Event& e) {
-  mf::LogDebug("FilterCRTPMTMatching: ") << "beginning analyis";
+  mf::LogDebug("FilterCRTPMTMatching") << "beginning analyis";
   // Start by fetching some basic event information for our n-tuple.
   fEvent = e.id().event();
   fRun = e.run();
