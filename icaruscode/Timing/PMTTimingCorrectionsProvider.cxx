@@ -99,20 +99,11 @@ void icarusDB::PMTTimingCorrectionsProvider::ReadPMTCablesCorrections( uint32_t 
             double phase_correction = getDoubleValue( tuple, 13, &error );
             if( error ) throw std::runtime_error( "Encountered error while trying to access 'phase_correction' on table " + name );
    
-            /// This is the delay due to the cables connecting the 'global' FPGA of the trigger crate to the spare channel of the first digitizer in each VME crates. 
-            ////The phase correction is an additional fudge factor 
-            /// holding local variation due to constant clock offsets (it can be up to 8 ns)
-            /// It can be absorbed within other corrections if necessary
-            /// Corrections are saved in ns, but icaruscode wants us
-            /// Correction are saved with the sing correspoding to their time direction 
+            // NOTE: corrections are saved in ns, but icaruscode wants us
+            
             fDatabaseTimingCorrections[channel_id].triggerCableDelay = -(trigger_reference_delay-phase_correction)/1000.;
 
-            /// This is the delay along the distribution line of the TTT reset
-            /// The phase correction is an additional fudge factor 
-            /// holding local variation due to constant clock offsets (it can be up to 8 ns)
-            /// It can be absorbed within other corrections if necessary
-            /// Corrections are saved in ns, but icaruscode wants us
-            /// Corrections are additive! 
+            // delay along the distribution line of the TTT reset
             fDatabaseTimingCorrections[channel_id].resetCableDelay = (reset_distribution_delay-phase_correction)/1000.; 
 
             releaseTuple(tuple);

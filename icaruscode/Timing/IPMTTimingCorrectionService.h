@@ -16,8 +16,19 @@
 
 // -----------------------------------------------------------------------------
 namespace icarusDB {
-  /// The only thing this service does is to return its service provider of type
-  /// `icarusDB::PMTTimingCorrections`.
+  /**
+   * @brief Provides access to PMT timing corrections.
+   * 
+   * The only thing this service does is to return its service provider of type
+   * `icarusDB::PMTTimingCorrections`, which can then be used to query for
+   * PMT timing corrections.
+   * 
+   * Use it to access the service provider like in:
+   * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{.cpp}
+   * icarusDB::PMTTimingCorrections const* PMTtimingCorr
+   *   = lar::providerFrom<icarusDB::IPMTTimingCorrectionService const>();
+   * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   */
   using IPMTTimingCorrectionService
     = lar::ServiceProviderInterfaceWrapper<PMTTimingCorrections>;
 }

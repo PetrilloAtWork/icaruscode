@@ -27,8 +27,22 @@ namespace icarusDB {
       
       virtual ~PMTTimingCorrections() noexcept = default;
       
+      /**
+       * @brief Returns the correction on global trigger signal digitization.
+       * @returns the correction on global trigger signal digitization [us]
+       * 
+       * Corrections are saved with the sign corresponding to their time
+       * direction: they are expected to be _added_ to a time to correct it.
+       */
       virtual double getTriggerCableDelay( unsigned int channelID ) const = 0;
       
+      /**
+       * @brief Returns the correction on PMT readout board time counter.
+       * @return correction on readout board time counter [us]
+       * 
+       * Corrections are saved with the sign corresponding to their time
+       * direction: they are expected to be _added_ to a time to correct it.
+       */
       virtual double getResetCableDelay( unsigned int channelID ) const = 0;
 
       virtual double getLaserCorrections( unsigned int channelID ) const = 0;

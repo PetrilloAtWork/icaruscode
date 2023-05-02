@@ -18,6 +18,17 @@
 
 // -----------------------------------------------------------------------------
 namespace icarusDB { class PMTTimingCorrectionService; }
+/**
+ * @brief _art_ service wrapper to `icarusDB::PMTTimingCorrectionsProvider`.
+ * @see `icarusDB::IPMTTimingCorrectionService`
+ * 
+ * This service is an implementation of `icarusDB::IPMTTimingCorrectionService`
+ * service interface.
+ * 
+ * This service automatically updates the database on each change of run.
+ * As such, it is compatible with _art_ multithreading.
+ * 
+ */
 class icarusDB::PMTTimingCorrectionService
   : public IPMTTimingCorrectionService, private PMTTimingCorrectionsProvider {
     
