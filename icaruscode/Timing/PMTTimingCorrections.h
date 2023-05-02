@@ -21,21 +21,21 @@
 
 namespace icarusDB {
 
-	class PMTTimingCorrections: lar::UncopiableClass
-	{
-		public: 
-			
-			virtual ~PMTTimingCorrections() noexcept = default;
-			
-			virtual double getTriggerCableDelay( unsigned int channelID ) const = 0;
-			
-			virtual double getResetCableDelay( unsigned int channelID ) const = 0;
+  class PMTTimingCorrections: lar::UncopiableClass
+  {
+    public:
+      
+      virtual ~PMTTimingCorrections() noexcept = default;
+      
+      virtual double getTriggerCableDelay( unsigned int channelID ) const = 0;
+      
+      virtual double getResetCableDelay( unsigned int channelID ) const = 0;
 
-			virtual double getLaserCorrections( unsigned int channelID ) const = 0;
+      virtual double getLaserCorrections( unsigned int channelID ) const = 0;
 
-			virtual double getCosmicsCorrections( unsigned int channelID ) const = 0;
+      virtual double getCosmicsCorrections( unsigned int channelID ) const = 0;
 
-	}; // end class
+  }; // end class
 
 }// end of namespace
 
