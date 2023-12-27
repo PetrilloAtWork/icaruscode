@@ -343,30 +343,6 @@ public:
       "TimeTrackTreeStorage" // default
       };
 
-    fhicl::Atom<float> MODA {
-      Name("MODA"),
-      Comment("first recombination parameter for dE/dx calculations"),
-      0.930 //default
-      };
-    
-    fhicl::Atom<float> MODB {
-      Name("MODB"),
-      Comment("second recombination parameter for dE/dx calculations"),
-      0.212
-      };
-    
-    fhicl::Atom<float> Wion {
-      Name("Wion"),
-      Comment("work function for recombination"),
-      0.0000236016
-      };
-    
-    fhicl::Atom<float> Efield {
-      Name("Efield"),
-      Comment("Electric field in kV/cm"),
-      0.5
-      };
-    
     fhicl::Atom<bool> ForceDowngoing {
       Name("ForceDowngoing"),
       Comment("force all tracks to be downgoing, flipping them when necessary"),
@@ -424,10 +400,6 @@ private:
   art::InputTag const fFlashProducer;
   art::InputTag const fCRTMatchProducer;
   std::string const fLogCategory;
-  float const fMODA;
-  float const fMODB;
-  float const fWion;
-  float const fEfield;
   bool const fForceDowngoing; ///< Whether to force all tracks to be downgoing.
   int const fCalorimetryPlaneNumber; ///< Which plane to use for calorimetry.
   
@@ -587,10 +559,6 @@ sbn::TimeTrackTreeStorage::TimeTrackTreeStorage(Parameters const& p)
   , fFlashProducer    { p().FlashProducer() }
   , fCRTMatchProducer { p().CRTMatchingProducer() }
   , fLogCategory      { p().LogCategory() }
-  , fMODA             { p().MODA() }
-  , fMODB             { p().MODB() }
-  , fWion             { p().Wion() }
-  , fEfield           { p().Efield() }
   , fForceDowngoing    { p().ForceDowngoing() }
   , fCalorimetryPlaneNumber { p().CalorimetryPlane() }
   // algorithms
