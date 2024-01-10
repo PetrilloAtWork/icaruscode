@@ -372,12 +372,6 @@ public:
                           const std::vector<anab::Calorimetry const*> &calo,
                           const geo::GeometryCore *geo);
 
-  float dEdx_calc(float dQdx, 
-                  float A,
-                  float B,
-                  float Wion,
-                  float E);
-
   void analyze(art::Event const& e) override;
   
   void endJob() override;
@@ -1123,22 +1117,6 @@ sbn::selHitInfo sbn::TimeTrackTreeStorage::makeHit(const recob::Hit &hit,
   
   return hinfo;
 }
-
-float sbn::TimeTrackTreeStorage::dEdx_calc(float dQdx,
-                                           float A,
-                                           float B,
-                                           float Wion,
-                                           float E) 
-{
-  float LAr_density_gmL = 1.389875; //LAr density in g/cm^3
-  float alpha = A;
-  float beta = B/(LAr_density_gmL*E);
-  float dEdx = ((std::exp(dQdx*Wion*beta) - alpha)/beta)*3.278;
- 
-  return dEdx;
-  
-}
-
 
 sbn::selCRTInfo sbn::TimeTrackTreeStorage::extractCRTinfoFor(
   art::Ptr<recob::Track> const& trackPtr, art::Event const& event,

@@ -193,8 +193,15 @@ icarus_trigger_channel_ignore_202101: [
    54,  58,  67,  98, 112, 153, 254  # hot channels [SBN DocDB 20696] 
 ]
 
+# this list was updated with the addition of some PMT and a remapping
+# in the end of 2023; it is believed to be valid as early as Run1 (May 2022)
+icarus_trigger_channel_ignore_202204: [
+    5,  21,  52,  59,  71, 103, 127, 131, 139, 161,
+  190, 215, 248, 350
+]
+
 # default selection of PMT channels to ignore
-icarus_trigger_channel_ignore: @local::icarus_trigger_channel_ignore_202101
+icarus_trigger_channel_ignore: @local::icarus_trigger_channel_ignore_202204
 
 
 ################################################################################

@@ -97,7 +97,7 @@ BEGIN_PROLOG
 
 # bad PMT channels (off or too noisy)
 triggeremu_config_icarus.settings.missing_pmt_channels:
-  @local::icarus_trigger_channel_ignore_202101  # from trigger_icarus.fcl
+  @local::icarus_trigger_channel_ignore  # from trigger_icarus.fcl
 
 # beam gate window for trigger emulation:
 #  - duration (BNB: 1.6 us; NuMI: 9.5 us; and some buffer)
@@ -169,11 +169,14 @@ triggeremu_config_icarus.settings.SlidingWindowTriggerPatternsWindowPair: [
   { inMainWindow: 4   inOppositeWindow: 4 },       # [3]
   { inMainWindow: 5   inOppositeWindow: 5 },       # [4]
   { inMainWindow: 6   inOppositeWindow: 6 },       # [5]
-  { inMainWindow: 2   sumOfOppositeWindows:  3 },  # [6]
-  { inMainWindow: 3   sumOfOppositeWindows:  5 },  # [7]
-  { inMainWindow: 4   sumOfOppositeWindows:  8 },  # [8]
-  { inMainWindow: 5   sumOfOppositeWindows: 10 },  # [9]
-  { inMainWindow: 8   sumOfOppositeWindows: 15 }   # [10]
+  { inMainWindow: 2   sumOfOppositeWindows:  3 },  # [6]   "S3"
+  { inMainWindow: 3   sumOfOppositeWindows:  5 },  # [7]   "S5"
+  { inMainWindow: 4   sumOfOppositeWindows:  8 },  # [8]   "S8"
+  { inMainWindow: 5   sumOfOppositeWindows: 10 },  # [9]   "S10"
+  { inMainWindow: 8   sumOfOppositeWindows: 15 },  # [10]  "S15"
+  { inMainWindow: 2   sumOfOppositeWindows:  4 },  # [11]  "S4"
+  { inMainWindow: 4   sumOfOppositeWindows:  7 },  # [12]  "S7"
+  { inMainWindow: 5   sumOfOppositeWindows:  9 }   # [13]  "S9"
 ] # SlidingWindowTriggerPatternsWindowPair
 
 

@@ -1,0 +1,59 @@
+#
+# File:    createtree_timed_tracks_icarus_CRT_CornerAdders.fcl
+# Purpose: creates a trigger efficiency analysis tree for data triggered with corner adders
+# Author:  Jacob Zettlemoyer (jzettle@fnal.gov), Gianluca Petrillo (petrillo@slac.stanford.edu)
+# 
+# The analysis target is to measure how often a trigger from any single one
+# of the four most upstream and downstream *adders* would be also covered by
+# a majority trigger from the same detector regions.
+# Adder trigger is expected from hardware (e.g. ICARUS run 10224) and is not
+# emulated, while the majority triggers are emulated.
+#
+
+# ------------------------------------------------------------------------------
+# overwrite settings
+BEGIN_PROLOG
+
+triggeremu_data_config_icarus.settings.EnabledWindowsTilingE  @protect_ignore: [  0,  2,  3,  5 ]
+triggeremu_data_config_icarus.settings.EnabledWindowsTilingW  @protect_ignore: [  6,  8,  9, 11 ]
+triggeremu_data_config_icarus.settings.EnabledWindowsSlidingE @protect_ignore: [  0,  4,  5,  9 ]
+triggeremu_data_config_icarus.settings.EnabledWindowsSlidingW @protect_ignore: [ 10, 14, 15, 19 ]
+
+END_PROLOG
+
+
+# ------------------------------------------------------------------------------
+#include "createtree_timed_tracks_icarus_CRT.fcl"
+
+# ------------------------------------------------------------------------------
+# --- parameter customisation
+# ------------------------------------------------------------------------------
+# track selection: 0 is trigger, reference of the hardware trigger time;
+# track time from CRT matching is ~0.6 us earlier than the hardware trigger time, with RMS ~25 ns;
+# times are on the `anab::T0` timescale, which is trigger time scale in nanoseconds
+
+physics.filters.t0selectorW.MinT0: -750
+physics.filters.t0selectorW.MaxT0: -450
+
+physics.filters.t0selectorE.MinT0: -750
+physics.filters.t0selectorE.MaxT0: -450
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# trigger emulation around the track time
+# (which is itself ~0.6 us earlier than the hardware trigger time);
+# needs to be properly aligned with the PMT waveforms (not with hardware trigger timestamp)
+physics.producers.gatesFromTracksW.GateStartOffset: "-1 us"
+physics.producers.gatesFromTracksW.GateEndOffset:   "+1 us"
+
+physics.producers.gatesFromTracksE.GateStartOffset: "-1 us"
+physics.producers.gatesFromTracksE.GateEndOffset:   "+1 us"
+
+
+# ------------------------------------------------------------------------------
+# BUG FIX
+# use the correct CRT timing approach
+physics.producers.CRTT0MatchingW.T0Alg.TSMode: 1
+physics.producers.CRTT0MatchingE.T0Alg.TSMode: 1
+
+# ------------------------------------------------------------------------------

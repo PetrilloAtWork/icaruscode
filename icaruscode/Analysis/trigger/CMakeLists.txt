@@ -24,6 +24,24 @@ cet_build_plugin(TimedTrackSelector art::module
   ROOT::Core
   )
 
+cet_build_plugin(TrueTimeTrackSelector art::module
+  LIBRARIES
+  icarusalg::Utilities
+  larsim::MCCheater_BackTrackerService_service
+  larsim::MCCheater_ParticleInventoryService_service
+  larsim::MCCheater_BackTracker
+  larsim::MCCheater_ParticleInventory
+  lardata::headers
+  larcore::headers
+  lardataalg::DetectorInfo
+  lardataobj::AnalysisBase
+  lardataobj::RecoBase
+  larcorealg::headers
+  nusimdata::SimulationBase
+  messagefacility::MF_MessageLogger
+  ROOT::Core
+  )
+
 cet_build_plugin(TimedTrackSelectorCRT art::module
   LIBRARIES
   icarusalg::Utilities
