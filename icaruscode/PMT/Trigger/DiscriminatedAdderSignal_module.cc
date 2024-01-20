@@ -918,7 +918,8 @@ void icarus::trigger::DiscriminatedAdderSignal::produce
       auto const& [ adderWaveform, contribs ]
       : util::zip(adderWaveforms, adderWaveformContribPtrs)
     ) {
-      assert(triggerGates.getGateFor(adderWaveform)); // must already exist
+      // must already exist:
+      assert(triggerGates.getGateFor(adderWaveform.ChannelNumber()));
       
       // tracking is used to keep a record of contributing waveforms from the
       // same channel; this does not apply here because only the adder "channel"
@@ -1035,7 +1036,6 @@ void icarus::trigger::DiscriminatedAdderSignal::produce
     assert(makeAdderMetaPtr);
     
     if (fSaveWaveforms) {
-      assert(adderWaveformMeta.size() == adderWaveforms.size());
       assert(makeAdderPtr);
       
       art::PtrMaker<icarus::WaveformBaseline> const makeAdderBaselinePtr
@@ -1060,6 +1060,7 @@ void icarus::trigger::DiscriminatedAdderSignal::produce
     // adder waveform metadata
     std::vector<sbn::OpDetWaveformMeta> adderWaveformMeta
      = transformColl(adderWaveforms, sbn::OpDetWaveformMetaMaker{ detTimings });
+    assert(adderWaveformMeta.size() == adderWaveforms.size());
     event.put(moveToUniquePtr(adderWaveformMeta));
     
   } // if save metadata
@@ -1220,7 +1221,7 @@ auto icarus::trigger::DiscriminatedAdderSignal::computeTimeInterval(
   while (true) {
     runningWindow = nextWindow(coverage, runningWindow);
     if (runningWindow.empty()) break; // no more openings left
-    assert(runningWindow.end != TimeCoverage_t::MaxTick);
+    assert(runningWindow.stop != TimeCoverage_t::MaxTick);
     
     auto const windowDuration = runningWindow.duration();
     if (duration > windowDuration) continue; // smaller window, discarded

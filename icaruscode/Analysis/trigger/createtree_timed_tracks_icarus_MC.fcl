@@ -1,0 +1,267 @@
+# File:    createtree_timed_tracks_icarus_MC.fcl
+# Purpose: creates trigger efficiency trees from Monte Carlo files.
+# Author:  Gianluca Petrillo (petrillo@slac.stanford.edu)
+# Date:    December 26, 2023
+#
+# This configuration is designed for in-time single particle events, and as such
+# it skips most selection criteria.
+#
+#
+#
+
+#include "stage1_icarus_defs.fcl"
+
+BEGIN_PROLOG
+
+###
+### fix settings (so that will not be overridden later);
+### these are defined in `triggeremu_MC_config_icarus.fcl`
+###
+
+# emulate only this fixed level threshold, and not the "hardware" one (`pmtthr`)
+triggeremu_MC_config_icarus.settings.PMTADCthresholds @protect_ignore: [ 390 ]
+
+# fix the PMT bad channel list
+# triggeremu_MC_config_icarus.settings.missing_pmt_channels @protect_ignore: [
+#     5,  21,  52,  59,  71, 103, 127, 131, 139, 161,
+#   190, 215, 248, 350
+# ]
+
+END_PROLOG
+
+#include "messages_icarus.fcl"
+#include "rootoutput_icarus.fcl"
+#include "services_common_icarus.fcl"
+#include "particleinventoryservice.fcl"
+#include "backtrackerservice.fcl"
+#include "trigger_icarus.fcl"
+#include "trigger_emulation_icarus.fcl"
+#include "triggeremu_MC_config_icarus.fcl"
+#include "icarus_trackcalo_skimmer.fcl"
+#include "calorimetry_icarus.fcl"
+
+BEGIN_PROLOG
+
+timetracktreestorage_base: {
+  module_type:      "TimeTrackTreeStorageCRT"
+  BeamGateProducer: "beamgate"    # directly from generation stage
+  TriggerProducer:  "emuTrigger"  # emulated (from input)
+  ForceDowngoing:   true
+}
+
+gatesFromTracks_icarus: {
+
+  module_type: BeamGateInfoFromTracksCRT
+  
+  GateStartOffset: "0 ns"
+  GateEndOffset:   "400 ns"
+  
+  T0Producer:    @nil  # must override
+  T0selProducer: @nil  # must override
+  
+} # gatesFromTracks_icarus
+
+calorimetryTemplate: {
+  @table::icarus_gnewcalomc  # from calorimetry_icarus.fcl
+  
+  FieldDistortion:                 false
+  TrackIsFieldDistortionCorrected: false
+  FieldDistortionEfield:           false
+  
+  Cryostat:          @nil
+  T0ModuleLabel:    ""
+  TrackModuleLabel: @nil
+}
+
+
+END_PROLOG
+
+# ------------------------------------------------------------------------------
+process_name: storeTree
+
+# ------------------------------------------------------------------------------
+services: {
+  @table::triggeremu_MC_config_icarus.services # from triggeremu_MC_config_icarus.fcl
+  @table::icarus_common_services
+  ParticleInventoryService: @local::standard_particleinventoryservice  # from particleinventoryservice.fcl
+  BackTrackerService:       @local::standard_backtrackerservice        # from backtrackerservice.fcl
+  
+  message:     @local::icarus_message_services_interactive_debug
+  TimeTracker: {}
+  TFileService: {
+    fileName: "timedtracks_store_triggeremu.root"
+  }
+  
+} # services
+
+# customization of message destinations from trigger emulation
+services.message.destinations: {
+  @table::services.message.destinations
+  @table::triggeremu_MC_config_icarus.messagedestinations
+}
+
+services.SpaceChargeService: @local::icarus_spacecharge
+
+physics: {
+  filters: {
+    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    t0selectorE: {
+      module_type: TrueTimeTrackSelector
+      InputTracks: [ { TrackTag: "pandoraTrackGausCryoE" } ]
+    }
+    
+    t0selectorW: {
+      module_type: TrueTimeTrackSelector
+      InputTracks: [ { TrackTag: "pandoraTrackGausCryoW" } ]
+    }
+    
+  }
+
+  producers: {
+    
+    gatesFromTracksE: {
+      @table::gatesFromTracks_icarus
+    
+      T0Producer:    "t0selectorE"
+      T0selProducer: "t0selectorE"
+    }
+    
+    gatesFromTracksW: {
+      @table::gatesFromTracks_icarus
+      
+      T0Producer:    "t0selectorW"
+      T0selProducer: "t0selectorW"
+    }
+  
+    @table::triggeremu_MC_config_icarus.producers # from triggeremu_MC_config_icarus.fcl
+
+    # if the correct threshold had been present in the input,
+    # we would have dummified this one; threshold override is at the bottom
+    pmtfixedthr: @local::icarus_pmtdiscriminatethr_fixed_MC # from trigger_emulation_icarus.fcl
+
+    #calorimetry
+
+    calorimetryCryoE: {
+      @table::calorimetryTemplate
+      Cryostat: 0
+      TrackModuleLabel: "pandoraTrackGausCryoE"
+    }
+    calorimetryCryoW: {
+      @table::calorimetryTemplate
+      Cryostat: 1
+      TrackModuleLabel: "pandoraTrackGausCryoW"
+    }
+  }
+
+  analyzers: {
+    
+    t0TreeStoreE: {
+      @table::timetracktreestorage_base
+      T0selProducer:       "t0selectorE"
+      T0Producer:          "pandoraGausCryoE"
+      PFPproducer:         "pandoraTrackGausCryoE"
+      TrackProducer:       "pandoraTrackGausCryoE"
+      TrackFitterProducer: "pandoraTrackGausCryoE"
+      CaloProducer:        "calorimetryCryoE"
+      # CaloProducer:        ""
+      FlashProducer:       "opflashCryoE"
+      CRTMatchingProducer: "CRTT0MatchingE"
+      EmulatedTriggers: [
+        { Name:       "M1s"   TriggerTag: "simSlidingORM1E" },
+        { Name:       "S3s"   TriggerTag: "simSlidingORS3E" },
+        { Name:       "S4s"   TriggerTag: "simSlidingORS4E" },
+        { Name:       "S5s"   TriggerTag: "simSlidingORS5E" },
+        { Name:       "S7s"   TriggerTag: "simSlidingORS7E" },
+        { Name:       "S8s"   TriggerTag: "simSlidingORS8E" },
+        { Name:       "S9s"   TriggerTag: "simSlidingORS9E" },
+        { Name:      "S10s"   TriggerTag: "simSlidingORS10E" }
+      ]
+      LogCategory:         "TimeTrackTreeStorageCryoE"
+      SelectEvents:      [ "selectionE" ]
+    } # t0TreeStoreE
+    
+    t0TreeStoreW: {
+      @table::timetracktreestorage_base
+      T0selProducer:       "t0selectorW"
+      T0Producer:          "pandoraGausCryoW"
+      PFPproducer:         "pandoraTrackGausCryoW"
+      TrackProducer:       "pandoraTrackGausCryoW"
+      TrackFitterProducer: "pandoraTrackGausCryoW"
+      CaloProducer:        "calorimetryCryoW"
+      # CaloProducer:        ""
+      FlashProducer:       "opflashCryoW"
+      CRTMatchingProducer: "CRTT0MatchingW"
+      EmulatedTriggers: [
+        { Name:       "M1s"   TriggerTag: "simSlidingORM1W" },
+        { Name:       "S3s"   TriggerTag: "simSlidingORS3W" },
+        { Name:       "S4s"   TriggerTag: "simSlidingORS4W" },
+        { Name:       "S5s"   TriggerTag: "simSlidingORS5W" },
+        { Name:       "S7s"   TriggerTag: "simSlidingORS7W" },
+        { Name:       "S8s"   TriggerTag: "simSlidingORS8W" },
+        { Name:       "S9s"   TriggerTag: "simSlidingORS9W" },
+        { Name:      "S10s"   TriggerTag: "simSlidingORS10W" }
+      ]
+      LogCategory:         "TimeTrackTreeStorageCryoW"
+      SelectEvents:      [ "selectionW" ]
+    } # t0TreeStoreW
+
+
+  } #analyzers
+  
+  selectionW:    [ "t0selectorW", "gatesFromTracksW", @sequence::triggeremu_MC_config_icarus.producerpathW ]
+  selectionE:    [ "t0selectorE", "gatesFromTracksE", @sequence::triggeremu_MC_config_icarus.producerpathE ]
+  # runprod:       []
+  runprod:       [ calorimetryCryoE, calorimetryCryoW ]
+  trigger_paths: [ runprod, selectionW, selectionE ]
+  
+  ana:           [ t0TreeStoreW, t0TreeStoreE ]
+  streams:       [ "rootoutput" ]
+  end_paths:     [ ana, streams ]
+  
+} # physics
+
+physics.producers.calorimetryCryoE.TrackModuleLabel: "pandoraTrackGausCryoE"
+physics.producers.calorimetryCryoW.TrackModuleLabel: "pandoraTrackGausCryoW"
+
+# ------------------------------------------------------------------------------
+outputs: {
+  rootoutput: {
+    @table::icarus_rootoutput
+    
+    fileProperties: { maxInputFiles: 1 }
+    checkFileName: false
+    
+    # these data products are enough to rerun this job (until hits are needed):
+    outputCommands: [
+      "drop *"
+      , "keep sbn::PMTconfiguration_*_*_*", "keep *_daqTrigger_*_*"
+      , "keep *_CRTT0Matching*_*_*", "keep *_daqTrigger_*_*"
+      , "keep *_pandoraGausCryo*_*_stage1", "drop *recob::SpacePoint*_pandoraGausCryo*_*_stage1", "keep *_pandoraTrackGausCryo*_*_stage1"
+      , "keep *_cluster3DCryo*_*_*", "drop *recob::SpacePoint*_cluster3DCryo*_*_*"
+      , "keep *_opflashCryo*_*_*"
+      , "keep *_*_*_TrgEmu", "keep *_*_*_T0sel"
+      , "keep *_*_*_storeTree"
+      ]
+
+  }
+}
+
+physics.producers.CRTT0MatchingE: {
+                 @table::standard_crtt0producerE
+  TriggerLabel: "emuTrigger"
+}
+physics.producers.CRTT0MatchingW: {
+                 @table::standard_crtt0producerW
+  TriggerLabel: "emuTrigger"
+}
+
+physics.selectionE: [ CRTT0MatchingE, @sequence::physics.selectionE ]
+physics.selectionW: [ CRTT0MatchingW, @sequence::physics.selectionW ]
+
+physics.producers.pmtfixedthr.TriggerGateBuilder.ChannelThresholds: @local::triggeremu_MC_config_icarus.settings.PMTADCthresholds
+
+# BUG FIX
+# use the correct CRT timing approach
+physics.producers.CRTT0MatchingW.T0Alg.TSMode: 1
+physics.producers.CRTT0MatchingE.T0Alg.TSMode: 1

@@ -111,6 +111,8 @@ triggeremu_data_config_icarus.settings.SlidingWindowTriggerPatterns            :
 #Input for adders work
 triggeremu_data_config_icarus.settings.EnabledWindowsCentralAddersSlidingE : [ 2, 7 ]
 triggeremu_data_config_icarus.settings.EnabledWindowsCentralAddersSlidingW : [ 12, 17 ]
+triggeremu_data_config_icarus.settings.EnabledWindowsCornerAddersSlidingE : [ 0, 9 ]
+triggeremu_data_config_icarus.settings.EnabledWindowsCornerAddersSlidingW : [ 10, 19 ]
 
 triggeremu_data_config_icarus.settings.EnabledWindowsCornerAddersSlidingE : [ 0, 4, 5, 9  ] 
 triggeremu_data_config_icarus.settings.EnabledWindowsCornerAddersSlidingW : [ 10, 14, 15, 19 ] 
@@ -349,7 +351,6 @@ triggeremu_data_config_icarus.simulationPrepCornerAddersEast: [
 triggeremu_data_config_icarus.simulationPrepCornerAddersWest: [
   trigslidewindowORCornerAddersW
 ]
-
 
 triggeremu_data_config_icarus.simulationPrepFull: [
   trigslidewindowOR
