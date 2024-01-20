@@ -926,19 +926,11 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
     log << "\nConfigured " << fADCthresholds.size() << " thresholds (ADC):";
     for (auto const& [ thresholdTag, dataTag ]: fADCthresholds)
       log << "\n * " << thresholdTag << " (from '" << dataTag.encode() << "')";
-#if 0 // TODO restore after adoption of https://github.com/LArSoft/lardataalg/pull/44
     log << "\nOther parameters:"
       << "\n * trigger time resolution: " << fTriggerTimeResolution
       << "\n * input beam gate reference time: "
         << util::StandardSelectorFor<util::TimeScale>{}
           .get(fBeamGateReference).name()
-#else
-    util::StandardSelectorFor<util::TimeScale> const timeScaleSelector;
-    log << "\nOther parameters:"
-      << "\n * trigger time resolution: " << fTriggerTimeResolution
-      << "\n * input beam gate reference time: "
-        << timeScaleSelector.get(fBeamGateReference).name()
-#endif
       ;
     if (fDeadTime == std::numeric_limits<nanoseconds>::max())
       log << "\n * only one trigger per beam gate (infinite dead time)";
