@@ -750,6 +750,16 @@ class icarus::trigger::TriggerSimulationOnGates
     detinfo::DetectorTimings const& detTimings
     ) const;
 
+  /**
+   * @brief Converts a `time` on the `BeamGateReference` scale to electronics.
+   * @param time time point on the scale specified by `BeamGateReference`
+   * @return the `time` converted into electronics time scale
+   */
+  detinfo::timescales::electronics_time refTimeToElectronicsTime(
+    util::quantities::points::nanosecond time,
+    detinfo::DetectorTimings const& detTimings
+    ) const;
+  
   /// Creates and returns a 1D histogram filled with `binnedContent`.
   TH1* makeHistogramFromBinnedContent(
     PlotSandbox_t& plots,
@@ -1522,30 +1532,25 @@ void icarus::trigger::TriggerSimulationOnGates::printSummary() const {
 
 
 //------------------------------------------------------------------------------
-auto icarus::trigger::TriggerSimulationOnGates::toBeamGateTime(
-  util::quantities::nanosecond time, detinfo::DetectorTimings const& detTimings
+auto icarus::trigger::TriggerSimulationOnGates::refTimeToElectronicsTime(
+  util::quantities::points::nanosecond time,
+  detinfo::DetectorTimings const& detTimings
 ) const
-  -> nanoseconds
+  -> detinfo::timescales::electronics_time
 {
-  // currently (LArSoft v09_77_00) `detinfo::DetectorTimings` does not support
-  // beam gate timescale conversion, so we need to do it "by hand" from...
-  // electronics time, as usual
-  
-  detinfo::timescales::electronics_time time_es;
   switch (fBeamGateReference) {
     case util::TimeScale::Electronics:
-      time_es = detinfo::timescales::electronics_time{ time };
-      break;
+      return detinfo::timescales::electronics_time{ time };
     case util::TimeScale::BeamGate:
-      return nanoseconds{ time };
+      // currently (LArSoft v09_77_00) `detinfo::DetectorTimings` does not
+      // support beam gate timescale conversion, so we need to do it "by hand"
+      return detTimings.BeamGateTime() + nanoseconds{ time.quantity() };
     case util::TimeScale::Trigger:
-      time_es = detTimings.toElectronicsTime
+      return detTimings.toElectronicsTime
         (detinfo::timescales::trigger_time{ time });
-      break;
     case util::TimeScale::Simulation:
-      time_es = detTimings.toElectronicsTime
+      return detTimings.toElectronicsTime
         (detinfo::timescales::simulation_time{ time });
-      break;
     default:
       throw art::Exception{ art::errors::Configuration }
         << "Conversion of times from reference '"
@@ -1554,9 +1559,17 @@ auto icarus::trigger::TriggerSimulationOnGates::toBeamGateTime(
         << "' not supported.\n";
   } // switch
   
-  return time_es - detTimings.BeamGateTime();
-  
-} // icarus::trigger::TriggerSimulationOnGates::rebaseTime()
+} // icarus::trigger::TriggerSimulationOnGates::refTimeToElectronicsTime()
+
+
+//------------------------------------------------------------------------------
+auto icarus::trigger::TriggerSimulationOnGates::toBeamGateTime(
+  util::quantities::nanosecond time, detinfo::DetectorTimings const& detTimings
+) const
+  -> nanoseconds
+{
+  return refTimeToElectronicsTime(time, detTimings) - detTimings.BeamGateTime();
+}
 
 
 //------------------------------------------------------------------------------
@@ -1574,8 +1587,14 @@ auto icarus::trigger::TriggerSimulationOnGates::extractEventInfo
 std::uint64_t icarus::trigger::TriggerSimulationOnGates::TimestampToUTC
   (art::Timestamp const& ts)
 {
-  return static_cast<std::uint64_t>(ts.timeHigh())
-    + static_cast<std::uint64_t>(ts.timeLow()) * 1'000'000'000ULL;
+  // attempt to autodetect whether in which format it is:
+  if (ts.timeHigh() >= 1'600'000'000U) { // 32 bit seconds, 32 bit nanoseconds
+    return static_cast<std::uint64_t>(ts.timeLow())
+      + static_cast<std::uint64_t>(ts.timeHigh()) * 1'000'000'000ULL;
+  }
+  else { // 64 bit nanoseconds
+    return static_cast<std::uint64_t>(ts.value());
+  }
 } // icarus::trigger::TriggerSimulationOnGates::TimestampToUTC()
 
 
@@ -1587,9 +1606,10 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
   EventAux_t const& eventInfo,
   unsigned int triggerNumber, std::vector<WindowTriggerInfo_t> const& info
 ) const {
-  
+  // need to convert beam gate specification according to BeamGateReference:
   detinfo::timescales::electronics_time const beamTime
-    = detTimings.BeamGateTime() + nanoseconds{ beamGate.Start() };
+    = refTimeToElectronicsTime
+      (util::quantities::nanosecond{ beamGate.Start() }, detTimings);
   TriggerBits_t const beamBits
     = fBeamBits.value_or(makeTriggerBits(beamGate.BeamType()));
   
