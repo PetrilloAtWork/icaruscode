@@ -628,7 +628,6 @@ class icarus::trigger::TriggerSimulationOnGates
   std::vector<std::atomic<unsigned int>> fTriggerCount;
   std::atomic<unsigned int> fTotalGates { 0U }; ///< Count of opened gates.
   
-  
   // --- END Internal variables ------------------------------------------------
   
 
@@ -664,7 +663,15 @@ class icarus::trigger::TriggerSimulationOnGates
     detinfo::DetectorTimings const& detTimings
     );
   
+  /// Creates and returns a 1D histogram filled with `binnedContent`.
+  TH1* makeHistogramFromBinnedContent(
+    PlotSandbox_t& plots,
+    std::string const& name, std::string const& title,
+    BinnedContent_t const& binnedContent
+    ) const;
+  
   // --- END ----- Plot infrastructure -----------------------------------------
+  
   
   /**
    * @brief Performs the simulation for the specified ADC threshold.
@@ -696,6 +703,12 @@ class icarus::trigger::TriggerSimulationOnGates
     unsigned int firstTriggerNumber
     );
   
+  
+  /// Prints the summary of fired triggers on screen.
+  void printSummary() const;
+  
+  
+  // --- BEGIN -- Data manipulation --------------------------------------------
   /**
    * @brief Converts the trigger information into trigger objects.
    * @param detTimings detector clocks service provider proxy
@@ -721,6 +734,14 @@ class icarus::trigger::TriggerSimulationOnGates
     unsigned int triggerNumber, std::vector<WindowTriggerInfo_t> const& info
     ) const;
   
+  /// Fills an `EventAux_t` from the information found in the argument.
+  static EventAux_t extractEventInfo(art::Event const& event);
+  
+  // --- END ---- Data manipulation --------------------------------------------
+  
+  
+  // --- BEGIN -- Format and ID conversions ------------------------------------
+  
   /// Converts trigger bits from `beamInfo` into a `sbn::triggerSourceMask`.
   static sbn::triggerSourceMask makeTriggerBits
     (sim::BeamGateInfo const& beamInfo);
@@ -732,10 +753,15 @@ class icarus::trigger::TriggerSimulationOnGates
   static sbn::bits::triggerLocationMask cryoIDtoTriggerLocation
     (geo::CryostatID const& cid);
   
+  /// Returns the ID of the cryostat the specified window belongs to.
+  static geo::CryostatID WindowCryostat
+    (icarus::trigger::WindowChannelMap::WindowInfo_t const& winfo)
+    { return winfo.composition.cryoid; }
+
+  // --- END ---- Format and ID conversions ------------------------------------
   
-  /// Prints the summary of fired triggers on screen.
-  void printSummary() const;
   
+  // --- BEGIN -- Time conversions and management ------------------------------
   /**
    * @brief Converts a time into beam gate time.
    * @param time the time to be converted
@@ -760,14 +786,6 @@ class icarus::trigger::TriggerSimulationOnGates
     detinfo::DetectorTimings const& detTimings
     ) const;
   
-  /// Creates and returns a 1D histogram filled with `binnedContent`.
-  TH1* makeHistogramFromBinnedContent(
-    PlotSandbox_t& plots,
-    std::string const& name, std::string const& title,
-    BinnedContent_t const& binnedContent
-    ) const;
-  
-  
   //@{
   /// Returns the time of the event in seconds from The Epoch.
   static double eventTimestampInSeconds(art::Timestamp const& time);
@@ -777,14 +795,9 @@ class icarus::trigger::TriggerSimulationOnGates
   /// Converts a standard _art_ timestamp into an UTC time [ns]
   static std::uint64_t TimestampToUTC(art::Timestamp const& ts);
   
-  /// Fills an `EventAux_t` from the information found in the argument.
-  static EventAux_t extractEventInfo(art::Event const& event);
+  // --- END ---- Time conversions and management ------------------------------
   
-  /// Returns the ID of the cryostat the specified window belongs to.
-  static geo::CryostatID WindowCryostat
-    (icarus::trigger::WindowChannelMap::WindowInfo_t const& winfo)
-    { return winfo.composition.cryoid; }
-
+  
 }; // icarus::trigger::TriggerSimulationOnGates
 
 
@@ -1317,6 +1330,111 @@ void icarus::trigger::TriggerSimulationOnGates::makeEventPlots() {
 
 
 //------------------------------------------------------------------------------
+void icarus::trigger::TriggerSimulationOnGates::plotEvent(
+  art::Event const& event, detinfo::DetectorTimings const& detTimings,
+  std::vector<sim::BeamGateInfo> const& gates
+) {
+  
+#if 0
+  
+  detinfo::timescales::trigger_time const beamGateTime
+    { detTimings.toTriggerTime(detTimings.BeamGateTime()) };
+  
+  fEventPlotInfo.eventTimes.add(eventTimestampInSeconds(event));
+  fEventPlotInfo.HWtrigTimeVsBeam.add(-beamGateTime.value());
+  
+  // `gates` is currently unused; it may be used e.g. to show how many gates
+  // were tested in each event
+  
+#endif // 0
+  
+} // icarus::trigger::TriggerSimulationOnGates::plotEvent()
+
+
+//------------------------------------------------------------------------------
+void icarus::trigger::TriggerSimulationOnGates::plotTriggerResponse(
+  std::size_t iThr, std::string const& thrTag,
+  std::vector<WindowTriggerInfo_t> const& triggerInfos,
+  detinfo::DetectorTimings const& detTimings
+) {
+  
+#if 0
+  
+  bool const fired = triggerInfo.info.fired();
+  
+  fPlots.demand<TEfficiency>("Eff").Fill(fired, iThr);
+  
+  if (fired) {
+    using namespace detinfo::timescales;
+    
+    // time of the beam gate in hardware trigger time scale
+    trigger_time const beamGateTime
+      { detTimings.toTriggerTime(detTimings.BeamGateTime()) };
+    
+    optical_tick const thisTriggerTick { triggerInfo.info.atTick() };
+    trigger_time const thisTriggerTimeVsHWtrig
+      { detTimings.toTriggerTime(thisTriggerTick) };
+    time_interval const thisTriggerTimeVsBeamGate
+      { thisTriggerTimeVsHWtrig - beamGateTime };
+    
+    mf::LogTrace(fLogCategory)
+      << "Trigger " << fPattern.tag() << " at tick " << thisTriggerTick
+      << " (" << thisTriggerTimeVsHWtrig << " vs. HW trigger, "
+      << thisTriggerTimeVsBeamGate << " vs. beam gate)"
+      ;
+    
+    fPlots.demand<TH1>("NTriggers").Fill(iThr);
+    fPlots.demand<TH2>("TriggerTick").Fill(thisTriggerTick.value(), iThr);
+    fPlots.demand<TH2>("TriggerTimeVsHWTrig").Fill
+      (thisTriggerTimeVsHWtrig.value(), iThr);
+    fPlots.demand<TH2>("TriggerTimeVsBeamGate").Fill
+      (thisTriggerTimeVsBeamGate.value(), iThr);
+    
+    PlotSandbox_t& plots{ fPlots.demandSandbox("Thr" + thrTag) };
+//     plots.demand<TGraph>("TriggerTimeVsHWTrigVsBeam").AddPoint( // ROOT 6.24?
+    TGraph& graph = plots.demand<TGraph>("TriggerTimeVsHWTrigVsBeam");
+    graph.SetPoint(graph.GetN(),
+      -beamGateTime.value(), thisTriggerTimeVsBeamGate.value()
+      );
+    
+    ThresholdPlotInfo_t& plotInfo { fThresholdPlots[iThr] };
+    plotInfo.HWtrigTimeVsBeam.add(-beamGateTime.value());
+    plotInfo.triggerTimesVsHWtrig.add(thisTriggerTimeVsHWtrig.value());
+    plotInfo.triggerTimesVsBeam.add(thisTriggerTimeVsBeamGate.value());
+    
+  }
+  
+#endif // 0
+  
+} // icarus::trigger::TriggerSimulationOnGates::plotTriggerResponse()
+
+
+//------------------------------------------------------------------------------
+TH1* icarus::trigger::TriggerSimulationOnGates::makeHistogramFromBinnedContent(
+  PlotSandbox_t& plots,
+  std::string const& name, std::string const& title,
+  BinnedContent_t const& binnedContent
+) const {
+  
+  if (binnedContent.empty()) return nullptr;
+  
+  TH1* hist = plots.make<TH1F>(
+    name, title,
+    binnedContent.nBins(), binnedContent.min(), binnedContent.max()
+    );
+  
+  // directly transfer the content bin by bin
+  unsigned int total = 0U;
+  for (auto [ iBin, count ]: util::enumerate(binnedContent)) {
+    hist->SetBinContent(iBin + 1, count);
+    total += count;
+  }
+  hist->SetEntries(static_cast<double>(total));
+  return hist;
+} // icarus::trigger::TriggerSimulationOnGates::makeHistogramFromBinnedContent
+
+
+//------------------------------------------------------------------------------
 auto icarus::trigger::TriggerSimulationOnGates::produceForThreshold(
   art::Event& event,
   detinfo::DetectorTimings const& detTimings,
@@ -1426,86 +1544,6 @@ auto icarus::trigger::TriggerSimulationOnGates::produceForThreshold(
 
 
 //------------------------------------------------------------------------------
-void icarus::trigger::TriggerSimulationOnGates::plotEvent(
-  art::Event const& event, detinfo::DetectorTimings const& detTimings,
-  std::vector<sim::BeamGateInfo> const& gates
-) {
-  
-#if 0
-  
-  detinfo::timescales::trigger_time const beamGateTime
-    { detTimings.toTriggerTime(detTimings.BeamGateTime()) };
-  
-  fEventPlotInfo.eventTimes.add(eventTimestampInSeconds(event));
-  fEventPlotInfo.HWtrigTimeVsBeam.add(-beamGateTime.value());
-  
-  // `gates` is currently unused; it may be used e.g. to show how many gates
-  // were tested in each event
-  
-#endif // 0
-  
-} // icarus::trigger::TriggerSimulationOnGates::plotEvent()
-
-
-//------------------------------------------------------------------------------
-void icarus::trigger::TriggerSimulationOnGates::plotTriggerResponse(
-  std::size_t iThr, std::string const& thrTag,
-  std::vector<WindowTriggerInfo_t> const& triggerInfos,
-  detinfo::DetectorTimings const& detTimings
-) {
-  
-#if 0
-  
-  bool const fired = triggerInfo.info.fired();
-  
-  fPlots.demand<TEfficiency>("Eff").Fill(fired, iThr);
-  
-  if (fired) {
-    using namespace detinfo::timescales;
-    
-    // time of the beam gate in hardware trigger time scale
-    trigger_time const beamGateTime
-      { detTimings.toTriggerTime(detTimings.BeamGateTime()) };
-    
-    optical_tick const thisTriggerTick { triggerInfo.info.atTick() };
-    trigger_time const thisTriggerTimeVsHWtrig
-      { detTimings.toTriggerTime(thisTriggerTick) };
-    time_interval const thisTriggerTimeVsBeamGate
-      { thisTriggerTimeVsHWtrig - beamGateTime };
-    
-    mf::LogTrace(fLogCategory)
-      << "Trigger " << fPattern.tag() << " at tick " << thisTriggerTick
-      << " (" << thisTriggerTimeVsHWtrig << " vs. HW trigger, "
-      << thisTriggerTimeVsBeamGate << " vs. beam gate)"
-      ;
-    
-    fPlots.demand<TH1>("NTriggers").Fill(iThr);
-    fPlots.demand<TH2>("TriggerTick").Fill(thisTriggerTick.value(), iThr);
-    fPlots.demand<TH2>("TriggerTimeVsHWTrig").Fill
-      (thisTriggerTimeVsHWtrig.value(), iThr);
-    fPlots.demand<TH2>("TriggerTimeVsBeamGate").Fill
-      (thisTriggerTimeVsBeamGate.value(), iThr);
-    
-    PlotSandbox_t& plots{ fPlots.demandSandbox("Thr" + thrTag) };
-//     plots.demand<TGraph>("TriggerTimeVsHWTrigVsBeam").AddPoint( // ROOT 6.24?
-    TGraph& graph = plots.demand<TGraph>("TriggerTimeVsHWTrigVsBeam");
-    graph.SetPoint(graph.GetN(),
-      -beamGateTime.value(), thisTriggerTimeVsBeamGate.value()
-      );
-    
-    ThresholdPlotInfo_t& plotInfo { fThresholdPlots[iThr] };
-    plotInfo.HWtrigTimeVsBeam.add(-beamGateTime.value());
-    plotInfo.triggerTimesVsHWtrig.add(thisTriggerTimeVsHWtrig.value());
-    plotInfo.triggerTimesVsBeam.add(thisTriggerTimeVsBeamGate.value());
-    
-  }
-  
-#endif // 0
-  
-} // icarus::trigger::TriggerSimulationOnGates::plotTriggerResponse()
-
-
-//------------------------------------------------------------------------------
 void icarus::trigger::TriggerSimulationOnGates::printSummary() const {
   
   //
@@ -1529,73 +1567,6 @@ void icarus::trigger::TriggerSimulationOnGates::printSummary() const {
   } // for
   
 } // icarus::trigger::TriggerSimulationOnGates::printSummary()
-
-
-//------------------------------------------------------------------------------
-auto icarus::trigger::TriggerSimulationOnGates::refTimeToElectronicsTime(
-  util::quantities::points::nanosecond time,
-  detinfo::DetectorTimings const& detTimings
-) const
-  -> detinfo::timescales::electronics_time
-{
-  switch (fBeamGateReference) {
-    case util::TimeScale::Electronics:
-      return detinfo::timescales::electronics_time{ time };
-    case util::TimeScale::BeamGate:
-      // currently (LArSoft v09_77_00) `detinfo::DetectorTimings` does not
-      // support beam gate timescale conversion, so we need to do it "by hand"
-      return detTimings.BeamGateTime() + nanoseconds{ time.quantity() };
-    case util::TimeScale::Trigger:
-      return detTimings.toElectronicsTime
-        (detinfo::timescales::trigger_time{ time });
-    case util::TimeScale::Simulation:
-      return detTimings.toElectronicsTime
-        (detinfo::timescales::simulation_time{ time });
-    default:
-      throw art::Exception{ art::errors::Configuration }
-        << "Conversion of times from reference '"
-        << util::StandardSelectorFor<util::TimeScale>{}
-          .get(fBeamGateReference).name()
-        << "' not supported.\n";
-  } // switch
-  
-} // icarus::trigger::TriggerSimulationOnGates::refTimeToElectronicsTime()
-
-
-//------------------------------------------------------------------------------
-auto icarus::trigger::TriggerSimulationOnGates::toBeamGateTime(
-  util::quantities::nanosecond time, detinfo::DetectorTimings const& detTimings
-) const
-  -> nanoseconds
-{
-  return refTimeToElectronicsTime(time, detTimings) - detTimings.BeamGateTime();
-}
-
-
-//------------------------------------------------------------------------------
-auto icarus::trigger::TriggerSimulationOnGates::extractEventInfo
-  (art::Event const& event) -> EventAux_t
-{
-  return {
-      TimestampToUTC(event.time()) // time
-    , event.event()                // event
-    };
-} // icarus::trigger::TriggerSimulationOnGates::extractEventInfo()
-
-
-//------------------------------------------------------------------------------
-std::uint64_t icarus::trigger::TriggerSimulationOnGates::TimestampToUTC
-  (art::Timestamp const& ts)
-{
-  // attempt to autodetect whether in which format it is:
-  if (ts.timeHigh() >= 1'600'000'000U) { // 32 bit seconds, 32 bit nanoseconds
-    return static_cast<std::uint64_t>(ts.timeLow())
-      + static_cast<std::uint64_t>(ts.timeHigh()) * 1'000'000'000ULL;
-  }
-  else { // 64 bit nanoseconds
-    return static_cast<std::uint64_t>(ts.value());
-  }
-} // icarus::trigger::TriggerSimulationOnGates::TimestampToUTC()
 
 
 //------------------------------------------------------------------------------
@@ -1692,6 +1663,17 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
 
 
 //------------------------------------------------------------------------------
+auto icarus::trigger::TriggerSimulationOnGates::extractEventInfo
+  (art::Event const& event) -> EventAux_t
+{
+  return {
+      TimestampToUTC(event.time()) // time
+    , event.event()                // event
+    };
+} // icarus::trigger::TriggerSimulationOnGates::extractEventInfo()
+
+
+//------------------------------------------------------------------------------
 sbn::triggerSourceMask
 icarus::trigger::TriggerSimulationOnGates::makeTriggerBits
   (sim::BeamGateInfo const& beamInfo)
@@ -1732,29 +1714,44 @@ icarus::trigger::TriggerSimulationOnGates::cryoIDtoTriggerLocation
 
 
 //------------------------------------------------------------------------------
-TH1*
-icarus::trigger::TriggerSimulationOnGates::makeHistogramFromBinnedContent(
-  PlotSandbox_t& plots,
-  std::string const& name, std::string const& title,
-  BinnedContent_t const& binnedContent
-) const {
+auto icarus::trigger::TriggerSimulationOnGates::toBeamGateTime(
+  util::quantities::nanosecond time, detinfo::DetectorTimings const& detTimings
+) const
+  -> nanoseconds
+{
+  return refTimeToElectronicsTime(time, detTimings) - detTimings.BeamGateTime();
+}
+
+
+//------------------------------------------------------------------------------
+auto icarus::trigger::TriggerSimulationOnGates::refTimeToElectronicsTime(
+  util::quantities::points::nanosecond time,
+  detinfo::DetectorTimings const& detTimings
+) const
+  -> detinfo::timescales::electronics_time
+{
+  switch (fBeamGateReference) {
+    case util::TimeScale::Electronics:
+      return detinfo::timescales::electronics_time{ time };
+    case util::TimeScale::BeamGate:
+      // currently (LArSoft v09_77_00) `detinfo::DetectorTimings` does not
+      // support beam gate timescale conversion, so we need to do it "by hand"
+      return detTimings.BeamGateTime() + nanoseconds{ time.quantity() };
+    case util::TimeScale::Trigger:
+      return detTimings.toElectronicsTime
+        (detinfo::timescales::trigger_time{ time });
+    case util::TimeScale::Simulation:
+      return detTimings.toElectronicsTime
+        (detinfo::timescales::simulation_time{ time });
+    default:
+      throw art::Exception{ art::errors::Configuration }
+        << "Conversion of times from reference '"
+        << util::StandardSelectorFor<util::TimeScale>{}
+          .get(fBeamGateReference).name()
+        << "' not supported.\n";
+  } // switch
   
-  if (binnedContent.empty()) return nullptr;
-  
-  TH1* hist = plots.make<TH1F>(
-    name, title,
-    binnedContent.nBins(), binnedContent.min(), binnedContent.max()
-    );
-  
-  // directly transfer the content bin by bin
-  unsigned int total = 0U;
-  for (auto [ iBin, count ]: util::enumerate(binnedContent)) {
-    hist->SetBinContent(iBin + 1, count);
-    total += count;
-  }
-  hist->SetEntries(static_cast<double>(total));
-  return hist;
-} // icarus::trigger::TriggerSimulationOnGates::makeHistogramFromBinnedContent
+} // icarus::trigger::TriggerSimulationOnGates::refTimeToElectronicsTime()
 
 
 //------------------------------------------------------------------------------
@@ -1772,6 +1769,21 @@ double icarus::trigger::TriggerSimulationOnGates::eventTimestampInSeconds
 double icarus::trigger::TriggerSimulationOnGates::eventTimestampInSeconds
   (art::Event const& event)
   { return eventTimestampInSeconds(event.time()); }
+
+
+//------------------------------------------------------------------------------
+std::uint64_t icarus::trigger::TriggerSimulationOnGates::TimestampToUTC
+  (art::Timestamp const& ts)
+{
+  // attempt to autodetect whether in which format it is:
+  if (ts.timeHigh() >= 1'600'000'000U) { // 32 bit seconds, 32 bit nanoseconds
+    return static_cast<std::uint64_t>(ts.timeLow())
+      + static_cast<std::uint64_t>(ts.timeHigh()) * 1'000'000'000ULL;
+  }
+  else { // 64 bit nanoseconds
+    return static_cast<std::uint64_t>(ts.value());
+  }
+} // icarus::trigger::TriggerSimulationOnGates::TimestampToUTC()
 
 
 //------------------------------------------------------------------------------
