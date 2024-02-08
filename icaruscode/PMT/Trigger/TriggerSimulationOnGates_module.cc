@@ -20,6 +20,7 @@
 #include "icarusalg/Utilities/CommonChoiceSelectors.h" // util::TimeScale...
 #include "icarusalg/Utilities/PlotSandbox.h"
 #include "icarusalg/Utilities/ROOTutils.h" // util::ROOT
+#include "icarusalg/Utilities/BinaryDumpUtils.h" // icarus::ns::util::bin()
 #include "icarusalg/Utilities/BinningSpecs.h"
 #include "icarusalg/Utilities/FixedBins.h"
 #include "icarusalg/Utilities/PassCounter.h"
@@ -196,6 +197,11 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  *     there are cryostats in the detector (thus, 2 for ICARUS). The value `0`
  *     represents the least significant bit. Using a value larger than the size
  *     of the trigger bit field (which is the default) will disable this mark.
+ * * `LVDSgatesTag` (string, optional): the name of the module instance with the
+ *     LVDS trigger gates the input was composed from. If specified, LVDS bits
+ *     are encoded in the output. This name must not include any instance name,
+ *     as the instance names will be automatically added from `Thresholds`
+ *     parameter with the same algorithm used for `TriggerGatesTag`.
  * * `LogCategory` (string, default `TriggerSimulationOnGates`): name of
  *     category used to stream messages from this module into message facility.
  * 
@@ -260,6 +266,10 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  *       in which case `triggerID` is `sbn::ExtraTriggerInfo::NoID` and
  *       `triggerCount` is `0`, both in their default values.
  *     * `gateID` and `gateCount` match the event number.
+ *     * `cryostats` includes the bits from all the LVDS gates exactly at
+ *       trigger time, if `LVDSgatesTag` configuration parameter is specified;
+ *       if that parameter is not specified or if no trigger was found,
+ *       all bits in those structures are left in default state.
  *   
  *     If the first gate did not emit a trigger, the object will be left
  *     default-constructed, noticeably with an invalid trigger timestamp
@@ -488,6 +498,11 @@ class icarus::trigger::TriggerSimulationOnGates
       300 // 5 minutes
       };
     
+    fhicl::OptionalAtom<std::string> LVDSgatesTag {
+      Name("LVDSgatesTag"),
+      Comment("label of the input LVDS gate data product (no instance name)")
+      };
+
     fhicl::Atom<std::string> LogCategory {
       Name("LogCategory"),
       Comment("name of the category used for the output"),
@@ -534,6 +549,13 @@ class icarus::trigger::TriggerSimulationOnGates
     unsigned int event; ///< Event number.
   };
 
+  /// Identifies a LVDS bit in the LVDS bit words.
+  struct LVDSindex_t {
+    std::size_t cryostat; ///< Cryostat index (as in `sbn::ExtraTriggerInfo`).
+    std::size_t PMTwall;  ///< PMT wall index (as in `sbn::ExtraTriggerInfo`).
+    std::uint64_t LVDSbit; ///< Index of the LVDS bit in a 64-bit word.
+  };
+  
   /// Content for future histograms, binned.
   using BinnedContent_t = icarus::ns::util::FixedBins<double>;
   
@@ -557,11 +579,17 @@ class icarus::trigger::TriggerSimulationOnGates
   
   using PlotSandbox_t = icarus::ns::util::PlotSandbox<art::TFileDirectory>;
   
+  /// Information on the input from a single threshold.
+  struct InputTags_t {
+    art::InputTag triggers;
+    art::InputTag LVDS;
+  };
+  
   
   // --- BEGIN Configuration variables -----------------------------------------
   
   /// Name of ADC thresholds to read, and the input tag connected to their data.
-  std::map<std::string, art::InputTag> fADCthresholds;
+  std::map<std::string, InputTags_t> fADCthresholds;
   
   /// Configured sliding window requirement pattern.
   WindowPattern const fPattern;
@@ -731,7 +759,25 @@ class icarus::trigger::TriggerSimulationOnGates
     detinfo::DetectorTimings const& detTimings,
     sim::BeamGateInfo const& beamGate,
     EventAux_t const& eventInfo,
-    unsigned int triggerNumber, std::vector<WindowTriggerInfo_t> const& info
+    unsigned int triggerNumber, std::vector<WindowTriggerInfo_t> const& info,
+    std::vector<icarus::trigger::OpticalTriggerGateData_t> const* LVDSgates
+    ) const;
+  
+  /**
+   * @brief Extracts and encodes the state of all LVDS gates at a given `tick`.
+   * @param[out] extraInfo the data structure where to save the encoded states
+   * @param gates the complete collection of LVDS gates
+   * @param tick the tick at which the states are going to be extracted
+   * 
+   * This method recreates a bit pattern equivalent to the one of the hardware
+   * trigger for the state of all the LVDS gates contributing to the trigger.
+   * 
+   * The encoding format is currently hard-coded.
+   */
+  void LVDSstateSnapshot(
+    sbn::ExtraTriggerInfo& extraInfo,
+    std::vector<icarus::trigger::OpticalTriggerGateData_t> const& gates,
+    detinfo::timescales::optical_tick tick
     ) const;
   
   /// Fills an `EventAux_t` from the information found in the argument.
@@ -757,6 +803,9 @@ class icarus::trigger::TriggerSimulationOnGates
   static geo::CryostatID WindowCryostat
     (icarus::trigger::WindowChannelMap::WindowInfo_t const& winfo)
     { return winfo.composition.cryoid; }
+  
+  /// Returns the LVDS bit associated to the specified PMT channel.
+  LVDSindex_t channelToLVDSbit(raw::Channel_t channel) const;
 
   // --- END ---- Format and ID conversions ------------------------------------
   
@@ -806,6 +855,9 @@ class icarus::trigger::TriggerSimulationOnGates
 //--- Implementation
 //------------------------------------------------------------------------------
 namespace {
+  
+  /// Symbols used to print the LVDS bit state on console.
+  static const char LVDSbitSymbols[] = "-x";
   
   /// Moves all the elements of `src` to the end of `dest`.
   /// The status of `src` after the call is undefined but destroyable.
@@ -899,8 +951,14 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
   // more complex parameter parsing
   //
   std::string const& discrModuleLabel = config().TriggerGatesTag();
-  for (std::string const& threshold: config().Thresholds())
-    fADCthresholds[threshold] = art::InputTag{ discrModuleLabel, threshold };
+  std::string LVDSmoduleLabel = config().LVDSgatesTag().value_or("");
+  for (std::string const& threshold: config().Thresholds()) {
+    fADCthresholds[threshold] = {
+      art::InputTag{ discrModuleLabel, threshold }, // triggers
+      LVDSmoduleLabel.empty()
+        ? art::InputTag{}: art::InputTag{ LVDSmoduleLabel, threshold } // LVDS
+    };
+  } // for
   
   // initialization of a vector of atomic is not as trivial as it sounds...
   fTriggerCount = std::vector<std::atomic<unsigned int>>(fADCthresholds.size());
@@ -917,9 +975,15 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
   using icarus::trigger::OpticalTriggerGateData_t; // for convenience
 
   // trigger primitives
-  for (art::InputTag const& inputDataTag: util::const_values(fADCthresholds)) {
+  for (auto const& [ inputDataTag, LVDSgateTag ]
+    : util::const_values(fADCthresholds)
+  ) {
     icarus::trigger::TriggerGateReader<>{ inputDataTag }
       .declareConsumes(consumesCollector());
+    if (!LVDSgateTag.empty() && fExtraInfo) {
+      consumes<std::vector<icarus::trigger::OpticalTriggerGateData_t>>
+        (LVDSgateTag);
+    }
   } // for
   
   //
@@ -936,9 +1000,9 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
       << ")";
   }
   
-  for (auto const& inputDataTag: util::const_values(fADCthresholds)) {
+  for (auto const& inputTags: util::const_values(fADCthresholds)) {
     std::string const outputInstance
-      = keepThresholdName? inputDataTag.instance(): "";
+      = keepThresholdName? inputTags.triggers.instance(): "";
     produces<std::vector<raw::Trigger>>(outputInstance);
     if (fExtraInfo) produces<sbn::ExtraTriggerInfo>(outputInstance);
     fOutputInstances.push_back(outputInstance);
@@ -947,8 +1011,12 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
   {
     mf::LogInfo log(fLogCategory);
     log << "\nConfigured " << fADCthresholds.size() << " thresholds (ADC):";
-    for (auto const& [ thresholdTag, dataTag ]: fADCthresholds)
-      log << "\n * " << thresholdTag << " (from '" << dataTag.encode() << "')";
+    for (auto const& [ thresholdTag, inputTags ]: fADCthresholds) {
+      log << "\n * " << thresholdTag << " (from '"
+        << inputTags.triggers.encode() << "')";
+      if (!inputTags.LVDS.empty() && fExtraInfo)
+        log << " (LVDS bits from '" << inputTags.LVDS.encode() << "')";
+    }
     log << "\nOther parameters:"
       << "\n * trigger time resolution: " << fTriggerTimeResolution
       << "\n * input beam gate reference time: "
@@ -1448,9 +1516,13 @@ auto icarus::trigger::TriggerSimulationOnGates::produceForThreshold(
   //
   // get the input
   //
-  art::InputTag const& dataTag = fADCthresholds.at(thrTag);
+  auto const& [ dataTag, LVDStag ] = fADCthresholds.at(thrTag);
   auto const& gates = icarus::trigger::ReadTriggerGates(event, dataTag);
-  
+  auto const* LVDSgates = (fExtraInfo && !LVDStag.empty())
+    ? &event.getProduct<std::vector<icarus::trigger::OpticalTriggerGateData_t>>
+      (LVDStag)
+    : nullptr
+    ;
   
   // extract or verify the topology of the trigger windows
   if (fWindowMapMan(gates))
@@ -1516,8 +1588,9 @@ auto icarus::trigger::TriggerSimulationOnGates::produceForThreshold(
     //
     // create and store the data product
     //
-    auto [ gateTriggers, extraInfo ] = triggerInfoToTriggerData
-      (detTimings, beamGate, eventInfo, triggerNumber++, triggerInfos);
+    auto [ gateTriggers, extraInfo ] = triggerInfoToTriggerData(
+      detTimings, beamGate, eventInfo, triggerNumber++, triggerInfos, LVDSgates
+      );
     
     append(*triggers, std::move(gateTriggers));
     
@@ -1575,7 +1648,8 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
   detinfo::DetectorTimings const& detTimings,
   sim::BeamGateInfo const& beamGate,
   EventAux_t const& eventInfo,
-  unsigned int triggerNumber, std::vector<WindowTriggerInfo_t> const& info
+  unsigned int triggerNumber, std::vector<WindowTriggerInfo_t> const& info,
+  std::vector<icarus::trigger::OpticalTriggerGateData_t> const* LVDSgates
 ) const {
   // need to convert beam gate specification according to BeamGateReference:
   detinfo::timescales::electronics_time const beamTime
@@ -1627,7 +1701,31 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
         extraInfo.triggerCount = triggerNumber;
         
         extraInfo.triggerLocationBits = cryoIDtoTriggerLocation(triggeringCryo);
-      }
+        
+        if (LVDSgates) {
+          // use a special set of characters for dumping the LVDS bits
+          auto dumpLVDSbits = [](auto mask)
+            { return icarus::ns::util::bin<LVDSbitSymbols>(mask); };
+          
+          LVDSstateSnapshot(extraInfo, *LVDSgates, trInfo.info.atTick());
+          mf::LogTrace{ fLogCategory }
+            << "Final LVDS values:"
+            << "\n  EE: " << dumpLVDSbits(extraInfo.LVDSinfo(
+              sbn::ExtraTriggerInfo::EastCryostat, sbn::ExtraTriggerInfo::EastPMTwall
+              ))
+            << "\n  EW: " << dumpLVDSbits(extraInfo.LVDSinfo(
+              sbn::ExtraTriggerInfo::EastCryostat, sbn::ExtraTriggerInfo::WestPMTwall
+              ))
+            << "\n  WE: " << dumpLVDSbits(extraInfo.LVDSinfo(
+              sbn::ExtraTriggerInfo::WestCryostat, sbn::ExtraTriggerInfo::EastPMTwall
+              ))
+            << "\n  WW: " << dumpLVDSbits(extraInfo.LVDSinfo(
+              sbn::ExtraTriggerInfo::WestCryostat, sbn::ExtraTriggerInfo::WestPMTwall
+              ))
+            ;
+        } // if LVDS
+        
+      } // if extra info
       
     }
     else { // trigger did not fire
@@ -1711,6 +1809,140 @@ icarus::trigger::TriggerSimulationOnGates::cryoIDtoTriggerLocation
     return mask(sbn::bits::triggerLocation::NBits);
   
 } // icarus::trigger::TriggerSimulationOnGates::cryoIDtoTriggerLocation()
+
+
+//------------------------------------------------------------------------------
+auto icarus::trigger::TriggerSimulationOnGates::channelToLVDSbit
+  (raw::Channel_t channel) const -> LVDSindex_t
+{
+  /*
+   * We have 4 64-bit words to be filled, one per PMT wall.
+   * Each 64-bit word is split into two 32-bit words, each associated to a
+   * physical connector, and only the 24 least significant bits are set for each
+   * of them. Each connector serves half a PMT wall (upsteam or downstream).
+   * Therefore, for each 64-bit word only 48 are assigned to LVDS pair states.
+   * The pattern being followed is:
+   *  * 32-bit word: a connector is made of 3 "ports" each with 8 signals/bits:
+   *      * port 0: most downstream (highest z, highest PMT channel numbers)
+   *      * port 1: intermediate
+   *      * port 2: most upstream (lowest z, lowest PMT channel numbers)
+   *    Each word has (MSB) "00" P2 P1 P0 (LSB).
+   *  * 64-bit word: connectors 0/2 as MSW, connectors 1/3 as LSW:
+   *        
+   *        (MSB) "00" C0P2 C0P1 C0P0  "00" C1P2 C1P1 C1P0 (LSB) (east PMT wall)
+   *        (MSB) "00" C2P2 C2P1 C2P0  "00" C3P2 C3P1 C3P0 (LSB) (west PMT wall)
+   *        
+   *    Pairs of ports have a map-like relation with the PMT channels: the map
+   *    is such that a contiguous set of 30 PMT in a PMT wall is covered by
+   *    C0P2+C0P1 (upstream), C1P1+C1P0 (center), and C0P2+C1P2 (downstream).
+   */
+  
+  // assuming a channel mapping where lower channel IDs are more eastward
+  auto const [ cryoIndex, cryoChannel ] = std::div(channel, 180); // 0-1
+  auto const [ wallIndex, wallChannel ] = std::div(cryoChannel, 90); // 0-1
+  
+  auto const [ thirdIndex, thirdChannel ] = std::div(wallChannel, 30); // 0-2
+
+    /*
+     * These are the 16 LVDS bits associated to channels from 69 to 89.
+     * The pattern repeats every 30 channels, but the resulting 2 bytes
+     * for channels 30-60 are assigned to two different 32-bit words.
+     */
+    constexpr std::array<std::uint64_t, 30> channelBit {
+      11, //  0
+      14, //  1
+      11, //  2
+       9, //  3
+      14, //  4
+      10, //  5
+       9, //  6
+      13, //  7
+      10, //  8
+      13, //  9
+       2, // 10
+       5, // 11
+       2, // 12
+       0, // 13
+       5, // 14
+      12, // 15
+       8, // 16
+      15, // 17
+      12, // 18
+      15, // 19
+       4, // 20
+       7, // 21
+       4, // 22
+       1, // 23
+       7, // 24
+       3, // 25
+       1, // 26
+       6, // 27
+       3, // 28
+       6  // 29
+    };
+  
+  std::uint64_t bitIndex = channelBit[thirdChannel] + 16 * (2 - thirdIndex);
+  if (bitIndex >= 24) bitIndex += 8; // make room for the 8 empty bits 24-31
+  
+  return LVDSindex_t{
+    /* .cryostat= */ cryoIndex == 0
+      ? sbn::ExtraTriggerInfo::EastCryostat: sbn::ExtraTriggerInfo::WestCryostat
+    /* .PMTwall= */, wallIndex == 0
+      ? sbn::ExtraTriggerInfo::EastPMTwall: sbn::ExtraTriggerInfo::WestPMTwall
+    /* .LVDSbit= */, bitIndex
+  };
+  
+} // icarus::trigger::TriggerSimulationOnGates::channelToLVDSbit()
+
+
+//------------------------------------------------------------------------------
+void icarus::trigger::TriggerSimulationOnGates::LVDSstateSnapshot(
+  sbn::ExtraTriggerInfo& extraInfo,
+  std::vector<icarus::trigger::OpticalTriggerGateData_t> const& gates,
+  detinfo::timescales::optical_tick tick
+  ) const
+{
+  /*
+   * We have 4 64-bit words to be filled, one per PMT wall.
+   * Each 64-bit word is split into two 32-bit words, each associated to a
+   * physical connector, and only the 24 least significant bits are set for each
+   * of them. Each connector serves half a PMT wall (upsteam or downstream).
+   * Therefore, for each 64-bit word only 48 are assigned to LVDS pair states.
+   * The pattern being followed is:
+   *  * 32-bit word: a connector is made of 3 "ports" each with 8 signals/bits:
+   *      * port 0: most downstream (highest z, highest PMT channel numbers)
+   *      * port 1: intermediate
+   *      * port 2: most upstream (lowest z, lowest PMT channel numbers)
+   *    Each word has (MSB) "00" P2 P1 P0 (LSB).
+   *  * 64-bit word: connectors 0/2 as MSW, connectors 1/3 as LSW:
+   *        
+   *        (MSB) "00" C0P2 C0P1 C0P0  "00" C1P2 C1P1 C1P0 (LSB) (east PMT wall)
+   *        (MSB) "00" C2P2 C2P1 C2P0  "00" C3P2 C3P1 C3P0 (LSB) (west PMT wall)
+   *        
+   *    Pairs of ports have a map-like relation with the PMT channels: the map
+   *    is such that a contiguous set of 30 PMT in a PMT wall is covered by
+   *    C0P2+C0P1 (upstream), C1P1+C1P0 (center), and C0P2+C1P2 (downstream).
+   */
+  for (icarus::trigger::OpticalTriggerGateData_t const& gate: gates) {
+    
+    // anyone of the channels of this gate
+    raw::Channel_t channel = gate.channels().front();
+    assert((channel >= 0) && (channel < 360));
+    
+    auto const [ cryoIndex, wallIndex, bitIndex ] = channelToLVDSbit(channel);
+    
+    bool const bitValue = gate.gateLevels().openingCount(tick.value()) > 0;
+
+    std::uint64_t& LVDSstatus
+      = extraInfo.cryostats.at(cryoIndex).LVDSstatus.at(wallIndex);
+    
+    std::uint64_t const bitMask = 1ULL << bitIndex;
+    if (bitValue) LVDSstatus |= bitMask;
+    else          LVDSstatus &= ~bitMask;
+    
+  } // for LVDS gates
+  
+} // icarus::trigger::TriggerSimulationOnGates::LVDSstateSnapshot()
 
 
 //------------------------------------------------------------------------------
