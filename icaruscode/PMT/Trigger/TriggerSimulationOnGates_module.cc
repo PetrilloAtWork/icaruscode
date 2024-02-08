@@ -1643,6 +1643,74 @@ void icarus::trigger::TriggerSimulationOnGates::printSummary() const {
 
 
 //------------------------------------------------------------------------------
+auto icarus::trigger::TriggerSimulationOnGates::toBeamGateTime(
+  util::quantities::nanosecond time, detinfo::DetectorTimings const& detTimings
+) const
+  -> nanoseconds
+{
+  // currently (LArSoft v09_77_00) `detinfo::DetectorTimings` does not support
+  // beam gate timescale conversion, so we need to do it "by hand" from...
+  // electronics time, as usual
+  
+  detinfo::timescales::electronics_time time_es;
+  switch (fBeamGateReference) {
+    case util::TimeScale::Electronics:
+      time_es = detinfo::timescales::electronics_time{ time };
+      break;
+    case util::TimeScale::BeamGate:
+      return nanoseconds{ time };
+    case util::TimeScale::Trigger:
+      time_es = detTimings.toElectronicsTime
+        (detinfo::timescales::trigger_time{ time });
+      break;
+    case util::TimeScale::Simulation:
+      time_es = detTimings.toElectronicsTime
+        (detinfo::timescales::simulation_time{ time });
+      break;
+    default:
+#if 0 // TODO restore after adoption of https://github.com/LArSoft/lardataalg/pull/44
+      throw art::Exception{ art::errors::Configuration }
+        << "Conversion of times from reference '"
+        << util::StandardSelectorFor<util::TimeScale>{}
+          .get(fBeamGateReference).name()
+        << "' not supported.\n";
+#else
+    {
+      util::StandardSelectorFor<util::TimeScale> const timeScaleSelector;
+      throw art::Exception{ art::errors::Configuration }
+        << "Conversion of times from reference '"
+        << timeScaleSelector.get(fBeamGateReference).name()
+        << "' not supported.\n";
+    }
+#endif
+  } // switch
+  
+  return time_es - detTimings.BeamGateTime();
+  
+} // icarus::trigger::TriggerSimulationOnGates::rebaseTime()
+
+
+//------------------------------------------------------------------------------
+auto icarus::trigger::TriggerSimulationOnGates::extractEventInfo
+  (art::Event const& event) -> EventAux_t
+{
+  return {
+      TimestampToUTC(event.time()) // time
+    , event.event()                // event
+    };
+} // icarus::trigger::TriggerSimulationOnGates::extractEventInfo()
+
+
+//------------------------------------------------------------------------------
+std::uint64_t icarus::trigger::TriggerSimulationOnGates::TimestampToUTC
+  (art::Timestamp const& ts)
+{
+  return static_cast<std::uint64_t>(ts.timeHigh())
+    + static_cast<std::uint64_t>(ts.timeLow()) * 1'000'000'000ULL;
+} // icarus::trigger::TriggerSimulationOnGates::TimestampToUTC()
+
+
+//------------------------------------------------------------------------------
 std::pair<std::vector<raw::Trigger>, sbn::ExtraTriggerInfo>
 icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
   detinfo::DetectorTimings const& detTimings,
