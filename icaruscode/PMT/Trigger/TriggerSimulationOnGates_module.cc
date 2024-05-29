@@ -275,6 +275,17 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  *       in which case `triggerID` is `sbn::ExtraTriggerInfo::NoID` and
  *       `triggerCount` is `0`, both in their default values.
  *     * `gateID` and `gateCount` match the event number.
+ *     * `cryostats`: information per cryostat:
+ *         * `beamToTrigger`: time from beam gate opening to the time trigger
+ *           conditions are met. This interval does not include the
+ *           `TriggerDelay`. The resolution of this time only reflects the
+ *           digitized input resolution, without any quantization (e.g., from
+ *           hardware clocks).
+ *         * `triggerLogicBits`: `sbn::bits::triggerLogic::PMTPairMajority` bit
+ *           set if the first trigger is in this cryostat, all `0` otherwise.
+ *         * `triggerCount`: number of triggers found in the gate. This is the
+ *           actual number of triggers found, and there is no attempt to
+ *           emulate the equivalent count in the hardware.
  *   
  *     If the first gate did not emit a trigger, the object will be left
  *     default-constructed, noticeably with an invalid trigger timestamp
@@ -1787,7 +1798,27 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
           extraInfo.triggerCount = triggerNumber;
           
           extraInfo.triggerLocationBits = triggerLocationBits;
-        }
+          
+          if (triggerLocationBits & mask(sbn::bits::triggerLocation::CryoEast))
+          {
+            sbn::ExtraTriggerInfo::CryostatInfo& cryoInfo
+              = extraInfo.cryostats[sbn::ExtraTriggerInfo::EastCryostat];
+            cryoInfo.triggerLogicBits
+              = mask(sbn::bits::triggerLogic::PMTPairMajority);
+            cryoInfo.beamToTrigger
+              = nanoseconds{ triggerTime - beamTime }.value();
+          }
+          if (triggerLocationBits & mask(sbn::bits::triggerLocation::CryoWest))
+          {
+            sbn::ExtraTriggerInfo::CryostatInfo& cryoInfo
+              = extraInfo.cryostats[sbn::ExtraTriggerInfo::WestCryostat];
+            cryoInfo.triggerLogicBits
+              = mask(sbn::bits::triggerLogic::PMTPairMajority);
+            cryoInfo.beamToTrigger
+              = nanoseconds{ triggerTime - beamTime }.value();
+          }
+          
+        } // if first trigger
         
         // update the counts
         if (triggerLocationBits & mask(sbn::bits::triggerLocation::CryoEast))
