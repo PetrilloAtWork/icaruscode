@@ -222,6 +222,11 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  *     there are cryostats in the detector (thus, 2 for ICARUS). The value `0`
  *     represents the least significant bit. Using a value larger than the size
  *     of the trigger bit field (which is the default) will disable this mark.
+ * * `TriggerTag` (input tag, optional): if specified, the absolute (UTC)
+ *     trigger time will be extracted from the specified (presumably, hardware-)
+ *     trigger information. Otherwise, the event time will be assumed to be the
+ *     absolute trigger time (the trigger and beam times themselves are learnt
+ *     from `DetectorClocks` service provider).
  * * `LogCategory` (string, default `TriggerSimulationOnGates`): name of
  *     category used to stream messages from this module into message facility.
  * 
@@ -254,6 +259,10 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  * * `LVDSgatesTag` + `Thresholds`: LVDS input gate collections (if LVDS status
  *     output is requested: see
  *     @ref TriggerSimulationOnGates_Output "Output data products" section).
+ * * `TriggerTag` (`sbn::ExtraTriggerInfo`) currently used solely to get the
+ *     UTC trigger time to be used as absolute time reference in the output
+ *     data products; if not specified, the event timestamp will be used
+ *     instead.
  * 
  * 
  * Output data products
@@ -544,7 +553,7 @@ class icarus::trigger::TriggerSimulationOnGates
 
     fhicl::Atom<bool> ExtraInfo {
       Name("ExtraInfo"),
-      Comment("produce a snm::ExtraTriggerInfo object our of the first gate"),
+      Comment("produce a sbn::ExtraTriggerInfo object our of the first gate"),
       false
       };
 
@@ -598,6 +607,11 @@ class icarus::trigger::TriggerSimulationOnGates
       Name("EventTimeBinning"),
       Comment("binning for the trigger time plot [second]"),
       300 // 5 minutes
+      };
+    
+    fhicl::OptionalAtom<art::InputTag> TriggerTag {
+      Name("TriggerTag"),
+      Comment("data product to extract the absolute time references from")
       };
     
     fhicl::Atom<std::string> LogCategory {
@@ -731,6 +745,9 @@ class icarus::trigger::TriggerSimulationOnGates
   nanoseconds const fTriggerTimeResolution; ///< Trigger resolution in time.
   
   double const fEventTimeBinning; ///< Trigger time plot binning [s]
+  
+  /// Source of absolute event time (empty: from service).
+  art::InputTag const fTriggerTag;
   
   /// Message facility stream category for output.
   std::string const fLogCategory;
@@ -1079,6 +1096,7 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
   , fCryostatZeroMask     (bitMask<TriggerBits_t>(config().CryostatFirstBit()))
   , fTriggerTimeResolution(config().TriggerTimeResolution())
   , fEventTimeBinning     (config().EventTimeBinning())
+  , fTriggerTag           (config().TriggerTag().value_or(art::InputTag{}))
   , fLogCategory          (config().LogCategory())
   , fSaveLVDSbits         (fExtraInfo && !config().LVDSgatesTag().empty())
   // services
@@ -1196,6 +1214,7 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
         << inputInfo.triggerGatesTag.encode() << "')";
     }
     log << "\nOther parameters:"
+      << "\n * LVDS requirements for the trigger: " << fPattern.description()
       << "\n * trigger time resolution: " << fTriggerTimeResolution
       << "\n * trigger response delay: " << fTriggerDelay
       << "\n * input beam gate: '" << fBeamGateTag.encode()
@@ -1244,6 +1263,11 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
       if (fLVDSstatusDelay != 0_ns)
         log << " after a delay of " << fLVDSstatusDelay;
     }
+    log << "\n * absolute reference time from: ";
+    if (!fTriggerTag.empty())
+      log << "trigger data product '" << fTriggerTag.encode() << "'";
+    else
+      log << "event timestamp";
     
   } // local block
   
@@ -1851,12 +1875,40 @@ auto icarus::trigger::TriggerSimulationOnGates::extractEventInfo
   (art::Event const& event, detinfo::DetectorTimings const& detTimings) const
   -> EventAux_t
 {
-  return {
-      TimestampToUTC(event.time()) // time (absolute)
-    , event.event()                // event
-    , detTimings.TriggerTime()     // hardware trigger time (relative)
-    , detTimings.BeamGateTime()    // hardware beam gate time (relative)
-    };
+  mf::LogTrace(fLogCategory)
+    <<   "Event number:      " << event.event()
+    << "\nEvent time:        " << TimestampToUTC(event.time())
+    << "\nFrom service:"
+    << "\n  trigger time:    " << detTimings.TriggerTime()
+    << "\n  beam gate time:  " << detTimings.BeamGateTime()
+    ;
+  if (fTriggerTag.empty()) {
+    return {
+        TimestampToUTC(event.time()) // time (absolute)
+      , event.event()                // event
+      , detTimings.TriggerTime()     // hardware trigger time (relative)
+      , detTimings.BeamGateTime()    // hardware beam gate time (relative)
+      };
+  }
+  else {
+    auto const& trigInfo
+      = event.getProduct<std::vector<raw::Trigger>>(fTriggerTag).at(0);
+    auto const& extraInfo
+      = event.getProduct<sbn::ExtraTriggerInfo>(fTriggerTag);
+    mf::LogTrace(fLogCategory)
+      <<   "From trigger data product ('" << fTriggerTag.encode()
+        << "') [used]:"
+      << "\n  event time:      " << extraInfo.triggerTimestamp
+      << "\n  trigger time:    " << electronics_time{ trigInfo.TriggerTime() }
+      << "\n  beam gate time:  " << electronics_time{ trigInfo.BeamGateTime() }
+      ;
+    return {
+        extraInfo.triggerTimestamp                  // time (absolute)
+      , event.event()                               // event
+      , electronics_time{ trigInfo.TriggerTime() }  // hardware trigger time
+      , electronics_time{ trigInfo.BeamGateTime() } // hardware beam gate time
+      };
+  }
 } // icarus::trigger::TriggerSimulationOnGates::extractEventInfo()
 
 
@@ -1963,7 +2015,7 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
 ) const {
   
   electronics_time const beamTime
-    = detTimings.BeamGateTime() + nanoseconds{ beamGate.Start() };
+    = eventInfo.beamGateTime + nanoseconds{ beamGate.Start() };
   TriggerBits_t const beamBits
     = fBeamBits.value_or(makeTriggerBits(beamGate.BeamType()));
   
@@ -2006,11 +2058,22 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
       retriggerMask = fRetriggeringMask;
       
       if (fillExtraInfo) {
+        
         sbn::bits::triggerLocationMask const triggerLocationBits
           = cryoIDtoTriggerLocation(triggeringCryo);
         
         // if this is first trigger in the beam gate, fill ExtraTriggerInfo anew
         if (extraInfo.triggerID == sbn::ExtraTriggerInfo::NoID) {
+          
+          auto const setCryoTrigger
+            = [&extraInfo](std::size_t side, nanoseconds beamToTrigger)
+            {
+              sbn::ExtraTriggerInfo::CryostatInfo& cryoInfo
+                = extraInfo.cryostats[side];
+              cryoInfo.triggerLogicBits
+                = mask(sbn::bits::triggerLogic::PMTPairMajority);
+              cryoInfo.beamToTrigger = beamToTrigger.value();
+            };
           
           extraInfo.triggerTimestamp
             = electronicsTimeToTimestamp(timestampedTriggerTime, eventInfo);
@@ -2020,24 +2083,12 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
           
           extraInfo.triggerLocationBits = triggerLocationBits;
           
+          nanoseconds const beamToTrigger = triggerTime - beamTime;
+          
           if (triggerLocationBits & mask(sbn::bits::triggerLocation::CryoEast))
-          {
-            sbn::ExtraTriggerInfo::CryostatInfo& cryoInfo
-              = extraInfo.cryostats[sbn::ExtraTriggerInfo::EastCryostat];
-            cryoInfo.triggerLogicBits
-              = mask(sbn::bits::triggerLogic::PMTPairMajority);
-            cryoInfo.beamToTrigger
-              = nanoseconds{ triggerTime - beamTime }.value();
-          }
+            setCryoTrigger(sbn::ExtraTriggerInfo::EastCryostat, beamToTrigger);
           if (triggerLocationBits & mask(sbn::bits::triggerLocation::CryoWest))
-          {
-            sbn::ExtraTriggerInfo::CryostatInfo& cryoInfo
-              = extraInfo.cryostats[sbn::ExtraTriggerInfo::WestCryostat];
-            cryoInfo.triggerLogicBits
-              = mask(sbn::bits::triggerLogic::PMTPairMajority);
-            cryoInfo.beamToTrigger
-              = nanoseconds{ triggerTime - beamTime }.value();
-          }
+            setCryoTrigger(sbn::ExtraTriggerInfo::WestCryostat, beamToTrigger);
           
           if (fSaveLVDSbits) {
             assert(PMTpairGates);
@@ -2300,7 +2351,10 @@ auto icarus::trigger::TriggerSimulationOnGates::skipTicksAfterTrigger() const
 std::uint64_t
 icarus::trigger::TriggerSimulationOnGates::electronicsTimeToTimestamp
   (electronics_time t, EventAux_t const& eventInfo) const
-  { return eventInfo.time + std::llround((t - eventInfo.triggerTime).value()); }
+{
+  return eventInfo.time + std::llround
+    ((t - eventInfo.triggerTime).convertInto<nanoseconds>().value());
+}
 
 
 //------------------------------------------------------------------------------
