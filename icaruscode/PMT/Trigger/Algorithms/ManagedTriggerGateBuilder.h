@@ -4,6 +4,7 @@
  * @author Gianluca Petrillo (petrillo@slac.stanford.edu)
  * @date   April 1, 2019
  * @see    `icaruscode/PMT/Trigger/Algorithms/ManagedTriggerGateBuilder.tcc`
+ *         `icaruscode/PMT/Trigger/Algorithms/ManagedTriggerGateBuilder.cxx`
  * 
  */
 
@@ -16,6 +17,9 @@
 
 // LArSoft libraries
 #include "lardataobj/RawData/OpDetWaveform.h"
+
+// framework libraries
+#include "fhiclcpp/types/Atom.h"
 
 // C/C++ standard libraries
 #include <vector>
@@ -50,18 +54,66 @@ namespace icarus::trigger {
  * The algorithm keeps track at each time of which are the thresholds enclosing
  * the signal level, and if the level crosses one of them, the gates associated
  * to those thresholds, and only them, are offered a chance to react.
+ * 
+ * 
+ * Specific configuration
+ * -----------------------
+ * 
+ * All classes derived by this base algorithm should support the following
+ * configuration parameters:
+ *  * `SamplePrescale` (positive integer; default: `1`): only consider one
+ *    sample every `SamplePrescale` for discrimination. For example, if
+ *    `SamplePrescale` is set to `4` (and `SampleOffset` is `0`), each waveform
+ *    in input will be discriminated considering only samples #0, #4, #8 and so
+ *    on (with a sampling rate of 2 ns this means the discrimination is
+ *    performed only every 8 nanoseconds).
+ *    This implies that if the waveform passes the threshold at sample #1 and by
+ *    sample #4 is back to not passing the threshold, the crossing is not
+ *    detected. The same holds if at sample #0 the threshold is already passed,
+ *    at sample #1 it is not any more, but by sample #4 it passed again.
+ *    If the parameter is set to `1` (default value), or `0` (special case),
+ *    all samples are considered.
+ *  * `SampleOffset` (non-negative integer; default: `0`): skips this many
+ *    samples at the beginning of each waveform. This parameter is intended to
+ *    provide an offset for the prescale: for example, in case the
+ *    discrimination were desired for the last sample in a group of four instead
+ *    of the first one, this could be achieved by setting `SamplePrescale` to
+ *    `4` and `SampleOffset` to `3`.
+ *    Note however that this parameter is honoured regardless of the prescale
+ *    settings (i.e. even if prescale is `1`, and even if it is smaller than
+ *    the specified offset).
+ * 
  */
 class icarus::trigger::ManagedTriggerGateBuilder
   : public icarus::trigger::TriggerGateBuilder
 {
   using Base_t = icarus::trigger::TriggerGateBuilder;
   
-    public:
-  
-  using Base_t::Base_t;
-  
     protected:
   
+  // --- BEGIN Configuration ---------------------------------------------------
+  struct Config: public Base_t::Config {
+    
+    using Name = fhicl::Name;
+    using Comment = fhicl::Comment;
+    
+    
+    fhicl::Atom<std::size_t> SamplePrescale {
+      Name("SamplePrescale"),
+      Comment("only consider one sample out of this many (1 = consider all)"),
+      1 // default: all
+      };
+    
+    fhicl::Atom<std::size_t> SampleOffset {
+      Name("SampleOffset"),
+      Comment("skip this many samples from the beginning of each waveform"),
+      0 // default: skip none
+      };
+    
+  }; // struct Config
+  // --- END Configuration -----------------------------------------------------
+
+
   // This class describes the interface of a gate manager but is incomplete.
   struct GateManager {
     
@@ -92,6 +144,18 @@ class icarus::trigger::ManagedTriggerGateBuilder
     
   }; // struct GateManager
   
+  
+  // --- BEGIN Configuration ---------------------------------------------------
+  
+  std::size_t const fSamplePrescale; ///< Use only one out of this many samples.
+  
+  std::size_t const fSampleOffset; ///< Skip this many samples at the beginning.
+  
+  // --- END Configuration -----------------------------------------------------
+  
+  
+  /// Constructor: reads and parses the configuration.
+  ManagedTriggerGateBuilder(Config const& config);
   
   /// Returns a collection of `TriggerGates` objects sorted by threshold.
   template <typename GateMgr>
