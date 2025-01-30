@@ -221,6 +221,9 @@ class icarus::trigger::ManagedTriggerGateBuilder
     (std::vector<GateInfo>& channelGates, Waveforms const& channelWaveforms)
     const;
   
+  /// Sets the input waveform polarity.
+  virtual void doSetPolarity(Polarity polarity) override;
+  
   /// Prints the class configuration.
   /// 
   /// Assumes the start of a new line and does not break the last one.

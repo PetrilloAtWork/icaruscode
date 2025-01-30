@@ -21,6 +21,7 @@
 
 # override discrimination settings
 physics.producers.pmtthr.TriggerGateBuilder: @local::icarus_triggergate_run3 # from trigger_icarus.fcl
+physics.producers.pmtthr.Polarity:          "Positive"
 
 # override trigger logic
 physics.producers.emuTrigger.Pattern: @local::icarus_triggergate_basic.patterns.S4

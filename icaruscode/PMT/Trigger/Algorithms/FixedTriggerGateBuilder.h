@@ -163,9 +163,6 @@ class icarus::trigger::FixedTriggerGateBuilder
   FixedTriggerGateBuilder(Config const& config);
   
   
-  /// Algorithm setup.
-  virtual void setup(detinfo::DetectorTimings const& timings) override;
-  
   /// Returns a collection of `TriggerGates` objects sorted by threshold.
   virtual std::vector<TriggerGates> build
     (std::vector<WaveformWithBaseline> const& waveforms) const override
@@ -190,6 +187,10 @@ class icarus::trigger::FixedTriggerGateBuilder
   
   // --- END Setup -------------------------------------------------------------
   
+  
+  /// Algorithm setup.
+  virtual void doSetup
+    (detinfo::DetectorTimings const& timings, Polarity polarity) override;
   
   /// Prints the class configuration.
   /// 

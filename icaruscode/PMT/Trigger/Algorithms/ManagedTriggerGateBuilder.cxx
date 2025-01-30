@@ -92,7 +92,25 @@ icarus::trigger::ManagedTriggerGateBuilder::ManagedTriggerGateBuilder
       << "' specifies a pattern with no active sample.\n";
   }
   
-}
+} // icarus::trigger::ManagedTriggerGateBuilder::ManagedTriggerGateBuilder()
+
+
+//------------------------------------------------------------------------------
+void icarus::trigger::ManagedTriggerGateBuilder::doSetPolarity
+  (Polarity polarity)
+{
+  
+  switch (polarity) {
+    case Polarity::Negative:
+    case Polarity::Positive:
+      forcePolarity(polarity);
+      break;
+    default:
+      throw cet::exception("ManagedTriggerGateBuilder")
+        << "Polarity not supported by this algorithm.\n";
+  } // switch
+  
+} // icarus::trigger::TriggerGateBuilder::doSetPolarity()
 
 
 //------------------------------------------------------------------------------

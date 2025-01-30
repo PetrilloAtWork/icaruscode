@@ -15,6 +15,7 @@
 #include "icaruscode/PMT/Trigger/Algorithms/TriggerTypes.h" // icarus::trigger::ADCCounts_t
 #include "icaruscode/PMT/Trigger/Utilities/TrackedOpticalTriggerGate.h"
 #include "icaruscode/PMT/Trigger/Utilities/TrackedTriggerGate.h" // gatesIn()
+#include "icarusalg/Utilities/CommonChoiceSelectors.h" // util::SignalPolarity
 #include "sbnobj/ICARUS/PMT/Data/WaveformBaseline.h"
 
 // LArSoft libraries
@@ -99,6 +100,12 @@ struct icarus::trigger::WaveformWithBaseline
  *
  * This is an abstract class.
  * Derived algorithms need to provide a way to actually `build()` the gates.
+ * 
+ * Some minimal functionality is provided at this level:
+ *  * Signal polarity setting, and a polarity-aware baseline subtraction method.
+ *  * Storage of timing information.
+ *  * Tracking of discrimination thresholds.
+ * 
  */
 class icarus::trigger::TriggerGateBuilder {
   
@@ -107,6 +114,8 @@ class icarus::trigger::TriggerGateBuilder {
   // --- BEGIN Data types ------------------------------------------------------
   
   using Channel_t = raw::Channel_t;
+  
+  using Polarity = util::SignalPolarity;
   
   /// Mnemonic for an invalid optical detector channel.
   static constexpr Channel_t InvalidChannel
@@ -194,7 +203,6 @@ class icarus::trigger::TriggerGateBuilder {
       // mandatory
       };
     
-    
   }; // struct Config
   // --- END Configuration -----------------------------------------------------
   
@@ -206,21 +214,29 @@ class icarus::trigger::TriggerGateBuilder {
   virtual ~TriggerGateBuilder() = default;
   
   /// Algorithm setup.
-  virtual void setup(detinfo::DetectorTimings const& timings);
+  void setup(
+    detinfo::DetectorTimings const& timings,
+    Polarity polarity = Polarity::Negative
+    )
+    { doSetup(timings, polarity); }
   
   /// Algorithm reset. It will require a new setup before using it again.
   virtual void reset() {}
   
   /// Resets and sets up.
-  virtual void resetup(detinfo::DetectorTimings const& timings)
-    { reset(); setup(timings); }
+  virtual void resetup(
+    detinfo::DetectorTimings const& timings,
+    Polarity polarity = Polarity::Negative
+    )
+    { reset(); doSetup(timings, polarity); }
   
   /// Resets and sets up (including a new set of thresholds).
   virtual void resetup(
     detinfo::DetectorTimings const& timings,
-    std::vector<ADCCounts_t> const& thresholds
+    std::vector<ADCCounts_t> const& thresholds,
+    Polarity polarity = Polarity::Negative
     )
-    { resetup(timings); doSetThresholds(thresholds); }
+    { resetup(timings, polarity); doSetThresholds(thresholds); }
   
   /// Returns a collection of `TriggerGates` objects sorted by threshold.
   virtual std::vector<TriggerGates> build
@@ -234,6 +250,8 @@ class icarus::trigger::TriggerGateBuilder {
   /// Returns the number of configured thresholds.
   std::size_t nChannelThresholds() const { return channelThresholds().size(); }
   
+  /// Returns the configured signal polarity.
+  Polarity signalPolarity() const { return fPolarity; }
   
   /// Converts a time [&micro;s] into optical ticks.
   optical_tick timeToOpticalTick(microsecond time) const;
@@ -275,6 +293,13 @@ class icarus::trigger::TriggerGateBuilder {
   virtual void doSetThresholds(std::vector<ADCCounts_t> const& thresholds)
     { fChannelThresholds = thresholds; }
   
+  /// Implementation of the setup.
+  virtual void doSetup
+    (detinfo::DetectorTimings const& timings, Polarity polarity);
+  
+  /// Sets the input waveform polarity.
+  virtual void doSetPolarity(Polarity polarity);
+  
   
   /// Prints the class configuration.
   /// 
@@ -292,12 +317,22 @@ class icarus::trigger::TriggerGateBuilder {
     std::string const& indent, std::string const& firstIndent
     ) const;
   
+  
+  /// Returns a waveform in `ADCCounts_t` with the baseline subtracted.
+  std::vector<ADCCounts_t> subtractBaseline
+    (WaveformWithBaseline const& waveformData) const;
+  
+  /// Unchecked set of polarity configuration.
+  void forcePolarity(Polarity polarity) { fPolarity = polarity; }
+  
     private:
   
   // --- BEGIN Configuration parameters ----------------------------------------
   
   /// All single channel thresholds, sorted in increasing order.
   std::vector<ADCCounts_t> fChannelThresholds;
+  
+  Polarity fPolarity = Polarity::Negative; ///< Polarity of the input waveforms.
   
   // --- END Configuration parameters ------------------------------------------
   

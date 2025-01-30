@@ -24,13 +24,13 @@ icarus::trigger::FixedTriggerGateBuilder::FixedTriggerGateBuilder
   , fGateDuration(config.GateDuration())
   , fExtendGate(config.ExtendGate())
 {}
-  
-  
+
+
 //------------------------------------------------------------------------------
-void icarus::trigger::FixedTriggerGateBuilder::setup
-  (detinfo::DetectorTimings const& timings)
+void icarus::trigger::FixedTriggerGateBuilder::doSetup
+  (detinfo::DetectorTimings const& timings, Polarity polarity)
 {
-  Base_t::setup(timings);
+  Base_t::doSetup(timings, polarity);
   
   fGateTicks = timings.toTicks<optical_time_ticks>(fGateDuration);
   
