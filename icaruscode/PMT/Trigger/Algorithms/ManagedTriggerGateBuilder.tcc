@@ -116,6 +116,9 @@ namespace icarus::trigger::details {
     
   }; // ThresholdsBand
 
+
+  // ---------------------------------------------------------------------------
+
 } // namespace icarus::trigger::details
 
 
@@ -190,8 +193,6 @@ void icarus::trigger::ManagedTriggerGateBuilder::buildChannelGates(
   Waveforms const& channelWaveforms
 ) const
 {
-  using ops = icarus::waveform_operations::NegativePolarityOperations<float>;
-  
   if (channelWaveforms.empty()) return;
   
   //
@@ -218,16 +219,11 @@ void icarus::trigger::ManagedTriggerGateBuilder::buildChannelGates(
 
     raw::OpDetWaveform const& waveform = waveformData.waveform();
     
-    ops const waveOps { waveformData.baseline().baseline() };
+    float const baseline
+      = static_cast<float>(waveformData.baseline().baseline());
     
-    // baseline subtraction is performed in floating point,
-    // but then rounding is applied again
-    auto subtractBaseline = [waveOps](float sample) -> ADCCounts_t
-      {
-        return
-          ADCCounts_t::castFrom(std::round(waveOps.subtractBaseline(sample)));
-      };
-    
+    // precompute the signal with baseline subtracted according to its polarity
+    std::vector<ADCCounts_t> const signal = subtractBaseline(waveformData);
     
     ++nWaveforms;
     assert(waveform.ChannelNumber() == channel);
@@ -279,18 +275,13 @@ void icarus::trigger::ManagedTriggerGateBuilder::buildChannelGates(
       ADCCounts_t blockRelSample = std::numeric_limits<ADCCounts_t>::min();
       for (std::ptrdiff_t sampleOffset: fPatternIndices) {
         std::ptrdiff_t iSample = iBStart + sampleOffset;
-      
-        // baseline subtraction is always a subtraction (as in "A minus B"),
-        // regardless the polarity of the waveform
-        auto const sample = waveform[iSample];
-        ADCCounts_t const relSample = subtractBaseline(sample);
-        blockRelSample = std::max(relSample, blockRelSample);
+        
+        blockRelSample = std::max(signal[iSample], blockRelSample);
         
         #if ICARUSCODE_PMT_TRIGGER_ALGORITHMS_MANAGEDTRIGGERGATEBUILDER_EXTRADEBUG
         // this is too much also for regular debugging...
         MF_LOG_TRACE(details::TriggerGateDebugLog)
-          << "  sample +" << sampleOffset << ": " << sample << " [=> "
-          << relSample << "]";
+          << "  sample +" << sampleOffset << ": " << signal[iSample];
         #endif
         
       } // for enabled sample in block
@@ -315,7 +306,7 @@ void icarus::trigger::ManagedTriggerGateBuilder::buildChannelGates(
         
         MF_LOG_TRACE(details::TriggerGateDebugLog)
           << "Block " << iBStart << " (" << blockRelSample << " on "
-          << waveOps.baseline() << ") leaving thresholds at "
+          << baseline << ") leaving thresholds at "
           << waveformTickStart << " + " << blockTimeTick;
         
         do { // we keep opening gates at increasing thresholds
@@ -344,7 +335,7 @@ void icarus::trigger::ManagedTriggerGateBuilder::buildChannelGates(
         
         MF_LOG_TRACE(details::TriggerGateDebugLog)
           << "Block " << iBStart << " (" << blockRelSample << " on "
-          << waveOps.baseline() << ") passing thresholds at "
+          << baseline << ") passing thresholds at "
           << waveformTickStart << " + " << blockTimeTick;
         
         do { // we keep opening gates at increasing thresholds

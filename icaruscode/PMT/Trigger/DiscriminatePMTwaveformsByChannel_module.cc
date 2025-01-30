@@ -12,11 +12,12 @@
 #include "icaruscode/PMT/Trigger/Utilities/TriggerDataUtils.h"
 #include "icaruscode/PMT/Algorithms/OpDetWaveformMetaUtils.h" // OpDetWaveformMetaMaker
 #include "icaruscode/IcarusObj/OpDetWaveformMeta.h"
+#include "icaruscode/Utilities/DataProductPointerMap.h"
+#include "icarusalg/Utilities/WaveformOperations.h"
+#include "icarusalg/Utilities/CommonChoiceSelectors.h" // util::SignalPolarity
 #include "sbnobj/ICARUS/PMT/Trigger/Data/TriggerGateData.h"
 #include "sbnobj/ICARUS/PMT/Data/WaveformBaseline.h"
 #include "sbnobj/Common/PMT/Data/PMTconfiguration.h"
-#include "icaruscode/Utilities/DataProductPointerMap.h"
-#include "icarusalg/Utilities/FHiCLutils.h" // util::fhicl::getOptionalValue()
 
 // LArSoft libraries
 #include "lardata/DetectorInfoServices/DetectorClocksService.h"
@@ -303,6 +304,14 @@ class icarus::trigger::DiscriminatePMTwaveformsByChannel: public art::EDProducer
       "DiscriminatePMTwaveformsByChannel"
       };
     
+    fhicl::Atom<util::SignalPolarity> Polarity {
+      Name("Polarity"),
+      Comment("input waveforms polarity ("
+        + fhicl::Atom<util::SignalPolarity>::selector().optionListString() + ")"
+        ),
+      util::SignalPolarity::Negative
+      };
+    
   }; // struct Config
   
   using Parameters = art::EDProducer::Table<Config>;
@@ -331,6 +340,8 @@ class icarus::trigger::DiscriminatePMTwaveformsByChannel: public art::EDProducer
   
   using ADCCounts_t = icarus::trigger::ADCCounts_t; // alias
   
+  using Polarity = util::SignalPolarity; // alias
+  
   // --- BEGIN Configuration variables -----------------------------------------
   
   art::InputTag const fOpDetWaveformTag; ///< Input optical waveform tag.
@@ -341,6 +352,8 @@ class icarus::trigger::DiscriminatePMTwaveformsByChannel: public art::EDProducer
   std::optional<float> const fBaseline; ///< A constant baseline level.
 
   unsigned int const fNOpDetChannels; ///< Number of optical detector channels.
+  
+  util::SignalPolarity const fPolarity; ///< Input waveform polarity.
   
   /// Default threshold.
   std::optional<raw::ADC_Count_t> const fDefaultThreshold;
@@ -402,6 +415,10 @@ class icarus::trigger::DiscriminatePMTwaveformsByChannel: public art::EDProducer
   /// Updates `fCurrentBaselines` with the current status of the object.
   void refreshCurrentBaselines();
   
+  /// Computes the relative threshold of `threshold` over `baseline`.
+  short signed int computeRelativeThreshold
+    (short signed int threshold, short signed int baseline) const;
+  
   /// Prints the current thresholds to the message logger.
   template <typename Logger = mf::LogInfo>
   void printCurrentThresholdsAndBaselines(Logger& log) const;
@@ -461,9 +478,9 @@ namespace icarus::trigger {
     (DiscriminatePMTwaveformsByChannel::ChannelConfig const& config)
   {
     return DiscriminatePMTwaveformsByChannel::ChannelInfo_t{
-      config.Channel(),                   // channel
-      util::fhicl::getOptionalValue(config.Baseline),  // baseline
-      util::fhicl::getOptionalValue(config.Threshold)  // threshold
+      config.Channel(),   // channel
+      config.Baseline(),  // baseline
+      config.Threshold()  // threshold
       };
   } // icarus::trigger::convert()
 } // namespace icarus::trigger
@@ -483,13 +500,13 @@ icarus::trigger::DiscriminatePMTwaveformsByChannel::DiscriminatePMTwaveformsByCh
   : art::EDProducer(config)
   // configuration
   , fOpDetWaveformTag(config().OpticalWaveforms())
-  , fBaselineTag(util::fhicl::getOptionalValue(config().Baselines))
-  , fBaseline(util::fhicl::getOptionalValue(config().Baseline))
+  , fBaselineTag(config().Baselines())
+  , fBaseline(config().Baseline())
   , fNOpDetChannels(getNOpDetChannels(config().NChannels))
-  , fDefaultThreshold(util::fhicl::getOptionalValue(config().DefaultThreshold))
+  , fPolarity(config().Polarity())
+  , fDefaultThreshold(config().DefaultThreshold())
   , fThresholdList(config().ThresholdList())
-  , fThresholdsFromPMTconfig
-    (util::fhicl::getOptionalValue(config().ThresholdsFromPMTconfig))
+  , fThresholdsFromPMTconfig(config().ThresholdsFromPMTconfig())
   , fChannelInfos(readChannelInfoSpecs(config().Thresholds()))
   , fOutputInstanceName(config().OutputInstanceName())
   , fSavePMTcoverage(config().SavePMTcoverage())
@@ -530,6 +547,14 @@ icarus::trigger::DiscriminatePMTwaveformsByChannel::DiscriminatePMTwaveformsByCh
   refreshCurrentThresholds();
   refreshCurrentBaselines();
   
+  // set the input polarity once and for all; timings (mandatory) don't matter.
+  fTriggerGateBuilder->setup(
+    detinfo::DetectorTimings{
+      art::ServiceHandle<detinfo::DetectorClocksService const>()->DataForJob()
+      },
+    fPolarity
+    );
+
   
   //
   // declaration of input
@@ -645,7 +670,6 @@ void icarus::trigger::DiscriminatePMTwaveformsByChannel::produce(art::Event& eve
       log << " with baselines from '" << fBaselineTag->encode() << "'";
   }
   
-  
   // We use an algorithm designed for applying to all channels the same
   // thresholds, and many of them. But here we have a different threshold per
   // channel, and a single threshold in that.
@@ -690,7 +714,7 @@ void icarus::trigger::DiscriminatePMTwaveformsByChannel::produce(art::Event& eve
         << "No threshold set up for PMT channel #" << channel << ".\n";
     }
     fTriggerGateBuilder->resetup
-      (detTimings, { ADCCounts_t::castFrom(threshold.value) });
+      (detTimings, { ADCCounts_t::castFrom(threshold.value) }, fPolarity);
     assert(fTriggerGateBuilder->nChannelThresholds() == 1U);
     mf::LogTrace(fLogCategory)
       << "Processing PMT channel #" << channel
@@ -832,6 +856,7 @@ icarus::trigger::DiscriminatePMTwaveformsByChannel::refreshCurrentThresholds()
   // override from PMT configuration
   //
   if (fPMTconfig) {
+    
     for (sbn::V1730Configuration const& boardConfig: fPMTconfig->boards) {
       for (sbn::V1730channelConfiguration const& channelConfig
         : boardConfig.channels
@@ -840,13 +865,15 @@ icarus::trigger::DiscriminatePMTwaveformsByChannel::refreshCurrentThresholds()
         
         auto const channelSlot
           = static_cast<std::size_t>(channelConfig.channelID);
+        
         if (fCurrentThresholds.size() <= channelSlot)
           fCurrentThresholds.resize(channelSlot + 1U);
         
-        fCurrentThresholds[channelSlot] = {
-          Source_t::PMTconfig,
-          ADCCounts_t::castFrom(channelConfig.relativeThreshold())
-          };
+        short signed int const relativeThreshold = computeRelativeThreshold
+          (channelConfig.threshold, channelConfig.baseline);
+        
+        fCurrentThresholds[channelSlot]
+          = { Source_t::PMTconfig, ADCCounts_t::castFrom(relativeThreshold) };
       
       } // for channel
     } // for board
@@ -996,6 +1023,29 @@ auto icarus::trigger::DiscriminatePMTwaveformsByChannel::readChannelInfoSpecs
   
   return chMap;
 } // icarus::trigger::DiscriminatePMTwaveformsByChannel::readChannelInfoSpecs()
+
+
+//------------------------------------------------------------------------------
+short signed int
+icarus::trigger::DiscriminatePMTwaveformsByChannel::computeRelativeThreshold
+  (short signed int threshold, short signed int baseline) const
+{
+  using namespace icarus::waveform_operations;
+  
+  switch (fPolarity) {
+    case Polarity::Positive:
+      return PositivePolarityOperations<short signed int>{ baseline }
+        .subtractBaseline(threshold);
+    case Polarity::Negative:
+      return NegativePolarityOperations<short signed int>{ baseline }
+        .subtractBaseline(threshold);
+    default:
+      throw cet::exception("TriggerGateBuilder")
+        << "Logic error: polarity " << static_cast<int>(fPolarity)
+        << " not supported.\n";
+  } // switch
+  
+} // icarus::trigger::DiscriminatePMTwaveformsByChannel::computeRelativeThreshold()
 
 
 //------------------------------------------------------------------------------
