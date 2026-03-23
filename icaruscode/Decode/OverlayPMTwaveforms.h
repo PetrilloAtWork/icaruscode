@@ -1,18 +1,22 @@
-// Contents of OverlayPMTwaveforms.h
-// Full documented implementation would go here
+// Full documented header implementation
+#ifndef OVERLAYPMTWAVEFORMS_H
+#define OVERLAYPMTWAVEFORMS_H
 
-////////////////////////////////////////////////////////////////////////////////
-// Class: OverlayPMTwaveforms
-// Description: Provides functionality to overlay PMT waveforms.
-// Authors: Your Name
-// Date: 2026-03-23
-// See also: ... 
-// ... Other documentation
-// ... 
+// Include necessary headers
+#include <vector>
+#include <iostream>
 
+// OverlayPMTwaveforms class definition
 class OverlayPMTwaveforms {
 public:
-    void overlayWaveform();
-    // Additional methods and documentation
+    OverlayPMTwaveforms();
+    ~OverlayPMTwaveforms();
+
+    void overlay();
+    std::vector<double> getWaveforms();
+
+private:
+    std::vector<double> waveforms;
 };
 
+#endif // OVERLAYPMTWAVEFORMS_H
