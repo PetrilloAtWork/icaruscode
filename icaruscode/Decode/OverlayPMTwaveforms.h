@@ -1,7 +1,18 @@
-// OverlayPMTwaveforms.h content here
-#ifndef OVERLAYPMTWAVEFORMS_H
-#define OVERLAYPMTWAVEFORMS_H
+// Contents of OverlayPMTwaveforms.h
+// Full documented implementation would go here
 
-// Function prototypes and class definitions
+////////////////////////////////////////////////////////////////////////////////
+// Class: OverlayPMTwaveforms
+// Description: Provides functionality to overlay PMT waveforms.
+// Authors: Your Name
+// Date: 2026-03-23
+// See also: ... 
+// ... Other documentation
+// ... 
 
-#endif // OVERLAYPMTWAVEFORMS_H
+class OverlayPMTwaveforms {
+public:
+    void overlayWaveform();
+    // Additional methods and documentation
+};
+
