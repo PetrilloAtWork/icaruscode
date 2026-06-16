@@ -130,6 +130,27 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  * module.
  * 
  * 
+ * Simulation timestamps
+ * ----------------------
+ * 
+ * For completeness, this module attempts to produce absolute UTC timestamps
+ * (as seconds from the UTC Epoch) for beam gate opening and trigger times.
+ * The absolute reference that is taken is from the beam gate timestamp in
+ * `sbn::ExtraTriggerInfo` from the data product configured in
+ * `BeamGateTimestampFrom`, or, if that is not provided or otherwise invalid,
+ * from the event time (`art::Event::time()`). This timestamp is defined to be
+ * the same as the beam gate opening in electronics time as stored in the first
+ * of the `raw::Trigger` objects with the same tag `BeamGateTimestampFrom`,
+ * or, if that is not available, with the current beam gate time from
+ * `detinfo::DetectorClocks::BeamGateTime()`.
+ * All absolute timestamps are then converted from the electronics time points
+ * using this definition. For example, the timestamp of a simulated trigger is
+ * created after determining its electronics time, by subtracting the reference
+ * beam gate time in electronics time and adding the reference beam gate
+ * timestamp (both as defined in the previous paragraph).
+ * 
+ * 
+ * 
  * Configuration
  * ==============
  * 
@@ -207,9 +228,9 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  *     `sbn::ExtraTriggerInfo` with reduced information from the _first_ of the
  *     triggers from the _first_ of the gates. If the first gate did not trigger
  *     the object will have fields marked invalid.
- * * `TriggerTimestampFrom` (input tag, default: none): if set, the trigger
- *     timestamp will be read from the `sbn::ExtraTriggerInfo` with the
- *     specified tag instead than the event time.
+ * * `BeamGateTimestampFrom` (input tag, default: none): if set, timestamps will
+ *     be based on the beam gate timestamp from the `sbn::ExtraTriggerInfo` with
+ *     the specified tag instead than the event time.
  * * `LVDSstatusDelay` (nanoseconds, default: `0`): when extraction of LVDS bits
  *     for `LVDSstatus` is requested (see
  *     @ref TriggerSimulationOnGates_Output "Output data products" section),
@@ -259,10 +280,11 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  * * `LVDSgatesTag` + `Thresholds`: LVDS input gate collections (if LVDS status
  *     output is requested: see
  *     @ref TriggerSimulationOnGates_Output "Output data products" section).
- * * `TriggerTag` (`sbn::ExtraTriggerInfo`) currently used solely to get the
- *     UTC trigger time to be used as absolute time reference in the output
- *     data products; if not specified, the event timestamp will be used
- *     instead.
+ * * `BeamGateTimestampFrom` (`std::vector<raw::Trigger>`,
+ *     `sbn::ExtraTriggerInfo`) currently used solely to get the beam gate time
+ *     (both UTC timestamp and relative) to be used as absolute time reference
+ *     in the output data products; if not specified, the event timestamp will
+ *     be used as beam gate timestamp instead.
  * 
  * 
  * Output data products
@@ -290,16 +312,20 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  *     was more than one trigger found in the same gate, all triggers except the
  *     first one (which all share the same ID) will have the `RetriggeringBit`
  *     set.
+ *     Trigger and beam gate times are set in the current electronics time
+ *     (defined by `DetectorClocksService`).
  * * `sbn::ExtraTriggerInfo` (if `ExtraInfo` configuration parameter is set):
  *     always present, and reflecting the triggers on the first beam gate: if a
  *     trigger fired in that beam gate, a _reduced_ version of
  *     `sbn::ExtraTriggerInfo` is provided; currently it is guaranteed to have:
  *     * `triggerTimestamp`: invalid timestamp if the trigger did not fire.
- *       Otherwise, if `TriggerTimestampFrom` is not empty, the timestamp is
- *       taken from `sbn::ExtraTriggerInfo::triggerTimestamp` (if valid) or
- *       `sbn::ExtraTriggerInfo::beamGateTimestamp`; if `TriggerTimestampFrom`
- *       is empty, from the _art_ event timestamp.
- *     * `beamGateTimestamp`: set accordingly to the relative time of the
+ *       Otherwise, the trigger timestamp is build from the beam gate timestamp
+ *       (next field below).
+ *     * `beamGateTimestamp`: if a `BeamGateTimestampFrom` tag is provided, the
+ *       the value of this timestamp is taken from its
+ *       `sbn::ExtraTriggerInfo::beamGateTimestamp`. If either the tag is not
+ *       provided or the timestamp is not valid, the event time is used instead.
+ *     * ` set accordingly to the relative time of the
  *       trigger vs. simulated beam gate opening, if the trigger happened.
  *       Otherwise, it will be set at the event time.
  *     * `sourceType`: interpreted according to the trigger bits of the input
@@ -565,9 +591,9 @@ class icarus::trigger::TriggerSimulationOnGates
       false
       };
 
-    fhicl::Atom<art::InputTag> TriggerTimestampFrom {
-      Name("TriggerTimestampFrom"),
-      Comment("data product to extract the trigger timestamp from (optional)"),
+    fhicl::Atom<art::InputTag> BeamGateTimestampFrom {
+      Name("BeamGateTimestampFrom"),
+      Comment("data product to use the beam gate timestamp of (optional)"),
       art::InputTag{}
       };
 
@@ -674,8 +700,9 @@ class icarus::trigger::TriggerSimulationOnGates
   
   /// Event-level information.
   struct EventAux_t {
-    std::uint64_t time;            ///< Event timestamp [ns]
+    std::uint64_t absTime;         ///< Event time as UTC timestamp [ns]
     unsigned int event;            ///< Event number.
+    electronics_time relTime;      ///< Same as `time` but in electronics scale.
     electronics_time triggerTime;  ///< Time of hardware trigger.
     electronics_time beamGateTime; ///< Time of hardware beam gate.
   };
@@ -731,7 +758,7 @@ class icarus::trigger::TriggerSimulationOnGates
   
   bool const fExtraInfo; ///< Whether to produce a `sbn::ExtraTriggerInfo`.
   
-  art::InputTag const fTriggerTimestampFrom; ///< Tag for trigger timestamp.
+  art::InputTag const fBeamGateTimestampFrom; ///< Tag for beam gate timestamp.
   
   /// Whether to trigger only the moment requirements are met.
   bool const fTriggerOnTransition;
@@ -1028,6 +1055,9 @@ class icarus::trigger::TriggerSimulationOnGates
   static art::InputTag makeTag
     (art::InputTag const& defModule, std::string const& thresholdStr);
   
+  /// Returns a string with the timestamp value in nanoseconds.
+  static std::string timestampToStr(std::uint64_t timestamp);
+  
 }; // icarus::trigger::TriggerSimulationOnGates
 
 
@@ -1094,7 +1124,7 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
   , fBeamBits             (config().BeamBits())
   , fEmitEmpty            (config().EmitEmpty())
   , fExtraInfo            (config().ExtraInfo())
-  , fTriggerTimestampFrom (config().TriggerTimestampFrom())
+  , fBeamGateTimestampFrom(config().BeamGateTimestampFrom())
   , fTriggerOnTransition  (config().TriggerOnTransition())
   , fDeadTime             (config().DeadTime())
   , fTriggerDelay         (config().TriggerDelay())
@@ -1172,8 +1202,10 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
   
   consumes<std::vector<sim::BeamGateInfo>>(fBeamGateTag);
   
-  if (!fTriggerTimestampFrom.empty())
-    consumes<sbn::ExtraTriggerInfo>(fTriggerTimestampFrom);
+  if (!fBeamGateTimestampFrom.empty()) {
+    consumes<std::vector<raw::Trigger>>(fBeamGateTimestampFrom);
+    consumes<sbn::ExtraTriggerInfo>(fBeamGateTimestampFrom);
+  }
   
   //
   // output data declaration
@@ -1269,11 +1301,11 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
     }
     if (fExtraInfo) {
       log << "\n * will produce a sbn::ExtraTriggerInfo from the first gate";
-      if (fTriggerTimestampFrom.empty())
+      if (fBeamGateTimestampFrom.empty())
         log << " using art event time as trigger timestamp";
       else {
-        log << " using the trigger timestamp from '"
-          << fTriggerTimestampFrom.encode() << "'";
+        log << " using the beam gate time and UTC timestamp from '"
+          << fBeamGateTimestampFrom.encode() << "'";
       }
     }
     if (fSaveLVDSbits) {
@@ -1899,40 +1931,82 @@ auto icarus::trigger::TriggerSimulationOnGates::extractEventInfo
   (art::Event const& event, detinfo::DetectorTimings const& detTimings) const
   -> EventAux_t
 {
-  mf::LogTrace(fLogCategory)
+  /*
+   * 1. Default: timestamp from event time, beam gate time from DetectorClocks.
+   * 2. If BeamGateTimestampFrom is valid and available, override timestamp with
+   *    its value.
+   * 3. If a trigger is also available, override the beam gate time with the value
+   *    from there.
+   */
+  mf::LogTrace log(fLogCategory);
+  log
     <<   "Event number:      " << event.event()
     << "\nEvent time:        " << TimestampToUTC(event.time())
     << "\nFrom service:"
     << "\n  trigger time:    " << detTimings.TriggerTime()
     << "\n  beam gate time:  " << detTimings.BeamGateTime()
     ;
-  if (fTriggerTimestampFrom.empty()) {
-    return {
-        TimestampToUTC(event.time()) // time (absolute)
-      , event.event()                // event
-      , detTimings.TriggerTime()     // hardware trigger time (relative)
-      , detTimings.BeamGateTime()    // hardware beam gate time (relative)
-      };
-  }
-  else {
-    auto const& trigInfo
-      = event.getProduct<std::vector<raw::Trigger>>(fTriggerTimestampFrom).at(0);
+  
+  // 1. defaults
+  EventAux_t eventInfo{
+      TimestampToUTC(event.time()) // reference time (absolute)
+    , event.event()                // event
+    , detTimings.BeamGateTime()    // reference time (relative)
+    , detTimings.TriggerTime()     // hardware trigger time (relative)
+    , detTimings.BeamGateTime()    // hardware beam gate time (relative)
+    };
+  
+  do { // dummy loop for fast break out
+    
+    // 2. override beam gate timestamp
+    if (fBeamGateTimestampFrom.empty()) break;
+    
     auto const& extraInfo
-      = event.getProduct<sbn::ExtraTriggerInfo>(fTriggerTimestampFrom);
-    mf::LogTrace(fLogCategory)
-      <<   "From trigger data product ('" << fTriggerTimestampFrom.encode()
-        << "') [used]:"
-      << "\n  event time:      " << extraInfo.triggerTimestamp
-      << "\n  trigger time:    " << electronics_time{ trigInfo.TriggerTime() }
-      << "\n  beam gate time:  " << electronics_time{ trigInfo.BeamGateTime() }
+      = event.getProduct<sbn::ExtraTriggerInfo>(fBeamGateTimestampFrom);
+    
+    if (!sbn::ExtraTriggerInfo::isValidTimestamp(extraInfo.triggerTimestamp))
+      break;
+    
+    eventInfo.absTime = extraInfo.triggerTimestamp;
+    log
+      <<   "From trigger data product ('" << fBeamGateTimestampFrom.encode()
+        << "')"
+      << "\n  event time:      " << timestampToStr(eventInfo.absTime)
+        << " [used]"
       ;
-    return {
-        extraInfo.triggerTimestamp                  // time (absolute)
-      , event.event()                               // event
-      , electronics_time{ trigInfo.TriggerTime() }  // hardware trigger time
-      , electronics_time{ trigInfo.BeamGateTime() } // hardware beam gate time
-      };
-  }
+    
+    // 3. override beam gate time
+    
+    // trigger data product may be empty, but it must be present
+    auto const& triggers
+      = event.getProduct<std::vector<raw::Trigger>>(fBeamGateTimestampFrom);
+    raw::Trigger const* trig = triggers.empty()? nullptr: &(triggers[0]);
+    
+    if (trig) {
+      eventInfo.triggerTime = electronics_time{ trig->TriggerTime() };
+      eventInfo.beamGateTime = electronics_time{ trig->BeamGateTime() };
+      eventInfo.relTime = eventInfo.beamGateTime;
+      log
+        << "\n  trigger time:    " << eventInfo.triggerTime
+        << "\n  beam gate time:  " << eventInfo.beamGateTime << " [used]"
+        ;
+    }
+    else {
+      log
+        << "\n  trigger time:    n/a"
+        << "\n  beam gate time:  n/a"
+        ;
+    }
+    
+  } while (false);
+  log
+    << "\nReference time:"
+    << "\n  absolute:        " << timestampToStr(eventInfo.absTime) << " (UTC)"
+    << "\n  relative:        " << eventInfo.relTime << " (electronics scale)"
+    ;
+  
+  return eventInfo;
+  
 } // icarus::trigger::TriggerSimulationOnGates::extractEventInfo()
 
 
@@ -2045,16 +2119,16 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
   std::vector<OpticalTriggerGateData_t> const* PMTpairGates
 ) const {
   
-  // TODO base here is from eventInfo, used to be from detTimings. Check.
+  // scale is always the current electronics time (from DetectorClocks)
   electronics_time const beamTime
-    = eventInfo.beamGateTime + nanoseconds{ beamGate.Start() };
+    = detTimings.BeamGateTime() + nanoseconds{ beamGate.Start() };
   TriggerBits_t const beamBits
     = fBeamBits.value_or(makeTriggerBits(beamGate));
   
   std::vector<raw::Trigger> triggers;
   
   sbn::ExtraTriggerInfo extraInfo;
-  assert(extraInfo.triggerID == sbn::ExtraTriggerInfo::NoID);
+  assert(!sbn::ExtraTriggerInfo::isValidID(extraInfo.triggerID));
   // these are fixed by the gate and set this way whether trigger fired or not:
   extraInfo.triggerType = sbn::bits::triggerType::Majority;
   extraInfo.sourceType  = beamTypeToTriggerSource(beamGate.BeamType());
@@ -2384,8 +2458,8 @@ std::uint64_t
 icarus::trigger::TriggerSimulationOnGates::electronicsTimeToTimestamp
   (electronics_time t, EventAux_t const& eventInfo) const
 {
-  return eventInfo.time + std::llround
-    ((t - eventInfo.triggerTime).convertInto<nanoseconds>().value());
+  return eventInfo.absTime + std::llround
+    ((t - eventInfo.relTime).convertInto<nanoseconds>().value());
 }
 
 
@@ -2415,6 +2489,15 @@ art::InputTag icarus::trigger::TriggerSimulationOnGates::makeTag
   }
   return { defModule.label(), thresholdStr, defModule.process() };
 } // icarus::trigger::TriggerSimulationOnGates::makeTag()
+
+
+//------------------------------------------------------------------------------
+std::string icarus::trigger::TriggerSimulationOnGates::timestampToStr
+  (std::uint64_t timestamp)
+{
+  return sbn::ExtraTriggerInfo::isValidTimestamp(timestamp)
+    ? std::to_string(timestamp): "<invalid>";
+}
 
 
 //------------------------------------------------------------------------------

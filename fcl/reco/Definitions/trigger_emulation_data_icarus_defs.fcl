@@ -28,10 +28,8 @@
 # Some trigger emulation settings
 # --------------------------------
 #
-# The settings used in this configuration were called for a while "rerun 4":
-# 
 #  * beam gate window:                  150 ns earlier than nominal beam gate
-#  * emulated trigger timestamp delay:  325 ns added
+#  * emulated trigger timestamp delay:  from triggeremu_config_icarus.settings
 #
 #
 # Output
@@ -154,12 +152,12 @@ trigSimTemplate: {
   TriggerDelay:           @local::triggeremu_config_icarus.settings.TriggerDelay # triggeremu_settings_icarus.fcl via trigger_emulation_data_config_icarus.fcl
   
   # specific for Run3:
-  TriggerOnTransition: true
+  TriggerOnTransition:    true
   
   ExtraInfo:              true
   
   # for the absolute timestamps:
-  TriggerTag:             daqTrigger
+  BeamGateTimestampFrom:  daqTrigger
   
 } # trigSimTemplate
 
