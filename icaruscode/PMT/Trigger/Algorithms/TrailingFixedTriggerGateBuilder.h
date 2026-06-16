@@ -1,14 +1,14 @@
 /**
- * @file   icaruscode/PMT/Trigger/Algorithms/FixedTriggerGateBuilder.h
+ * @file   icaruscode/PMT/Trigger/Algorithms/TrailingTrailingFixedTriggerGateBuilder.h
  * @brief  Fixed-length gate builder.
  * @author Gianluca Petrillo (petrillo@slac.stanford.edu)
  * @date   April 1, 2019
- * @see    `icaruscode/PMT/Trigger/Algorithms/FixedTriggerGateBuilder.cxx`
+ * @see    `icaruscode/PMT/Trigger/Algorithms/TrailingFixedTriggerGateBuilder.cxx`
  * 
  */
 
-#ifndef ICARUSCODE_PMT_TRIGGER_ALGORITHMS_FIXEDTRIGGERGATEBUILDER_H
-#define ICARUSCODE_PMT_TRIGGER_ALGORITHMS_FIXEDTRIGGERGATEBUILDER_H
+#ifndef ICARUSCODE_PMT_TRIGGER_ALGORITHMS_TRAILINGFIXEDTRIGGERGATEBUILDER_H
+#define ICARUSCODE_PMT_TRIGGER_ALGORITHMS_TRAILINGFIXEDTRIGGERGATEBUILDER_H
 
 
 // ICARUS libraries
@@ -36,7 +36,7 @@ namespace icarus::trigger {
   // declarations
   //
   
-  class FixedTriggerGateBuilder;
+  class TrailingFixedTriggerGateBuilder;
   
   // ---------------------------------------------------------------------------
   
@@ -65,7 +65,7 @@ namespace icarus::trigger {
  * as long as no transition from under 50 to 50 or more happens.
  * 
  */
-class icarus::trigger::FixedTriggerGateBuilder
+class icarus::trigger::TrailingFixedTriggerGateBuilder
   : public icarus::trigger::ManagedTriggerGateBuilder
 {
   using Base_t = icarus::trigger::ManagedTriggerGateBuilder;
@@ -89,12 +89,11 @@ class icarus::trigger::FixedTriggerGateBuilder
         : GateInfoBase(gate), gateDuration(gateDuration), extendGate(extendGate)
         {}
       
-      void belowThresholdAt(optical_tick /* tick */) {}
-      void aboveThresholdAt(optical_tick tick)
+      void belowThresholdAt(optical_tick tick)
         {
           using namespace util::quantities::electronics_literals;
           MF_LOG_TRACE(details::TriggerGateDebugLog)
-            << "Declared above threshold at: " << tick;
+            << "Declared below threshold at: " << tick;
           if ((tick < openUntil) && !extendGate) {
             MF_LOG_TRACE(details::TriggerGateDebugLog)
               << "  we are in dead time until " << openUntil
@@ -114,6 +113,7 @@ class icarus::trigger::FixedTriggerGateBuilder
             << " (" << gate().openingCount((openUntil - 1_tick).value())
             << " => " << gate().openingCount(openUntil.value()) << ")";
         } // aboveThresholdAt()
+      void aboveThresholdAt(optical_tick /* tick */) {}
       
     }; // struct FixedGateInfo
     
@@ -160,7 +160,7 @@ class icarus::trigger::FixedTriggerGateBuilder
   
   
   /// Constructor: sets the configuration.
-  FixedTriggerGateBuilder(Config const& config);
+  TrailingFixedTriggerGateBuilder(Config const& config);
   
   
   /// Returns a collection of `TriggerGates` objects sorted by threshold.
@@ -209,9 +209,9 @@ class icarus::trigger::FixedTriggerGateBuilder
     ) const;
 
   
-}; // class icarus::trigger::FixedTriggerGateBuilder
+}; // class icarus::trigger::TrailingFixedTriggerGateBuilder
 
 
 //------------------------------------------------------------------------------
 
-#endif // ICARUSCODE_PMT_TRIGGER_ALGORITHMS_FIXEDTRIGGERGATEBUILDER_H
+#endif // ICARUSCODE_PMT_TRIGGER_ALGORITHMS_TRAILINGFIXEDTRIGGERGATEBUILDER_H

@@ -1,47 +1,22 @@
 #!/usr/bin/env python
-#
-# Changes:
-# 20241024 (petrillo@slac.stanford.edu) [v1.2]
-#   added no authentication option and additional diagnostics for operations
-#   known to require authentication (i.e. creation of SAM definitions)
-# 20260424 (petrillo@slac.stanford.edu) [v1.3]
-#   * added `--suffix` and `--and` options
-#   * explicit support for compressed raw data, "raw" became uncompressed only
-#
-#
 
 import logging
 import time
+import math, os
 
 __author__ = "Gianluca Petrillo (petrillo@slac.stanford.edu)"
-__date__ = time.strptime("May 13, 2026", "%B %d, %Y")
-__version__ = "1.3"
+__date__ = time.strptime("October 21, 2024", "%B %d, %Y")
+__version__ = "1.0"
 __doc__ = """
-Manages SAM definitions for ICARUS data run.
+Creates a SAM definition containing the specified files.
+This script was created for the rare cases when a smart dimension specification
+is not possible; otherwise, it's always recommended to use an appropriate
+metadata query rather than specifying the files one by one.
 
-This script can query SAM database for the files in a run, or create and manage
-dataset definitions. The convenience lies in the uniform format for the
-definition names, so that they are predictable and easy to encode in programs.
+All files from all specified inputs are merged in a single SAM definition;
+duplicate entries are silently removed.
 
-The program selects specific characteristics (stream, stage, project version) of
-the file metadata. If no selection is provided, it will have one definition per
-stage and per project version, while the rest of the metadata will be ignored.
-
-Examples:
-
-1. See how many BNB majority raw files (both off-beam and on-beam) are available
-   for runs 11803 and 11806:
-    
-    %(prog)s  --query --stream=%%bnbmajority --stage=raw 11803 11806
-    
-2. Create two new datasets with all stage0 files of runs 11803 and 11806:
-    
-    %(prog)s  --create --stage=stage0 11803 11806
-    
-3. Have I already created a definition for stage1 for those runs?
-    
-    %(prog)s  --query --stage=stage1 11803 11806
-    
+The SAM definition dimension will be a set of SAM file identifiers.
 
 """
 
@@ -52,45 +27,19 @@ logging.basicConfig(format="[%(levelname)s] %(message)s")
 
 ExperimentName = "ICARUS"
 SAMExperimentName = ExperimentName.lower()
-DefaultStages = [ 'raw', 'stage0', 'stage1', ]
-
-StageDimensions = {
-  'raw':           "data_tier raw and icarus_project.stage daq",
-  'compressedraw': "data_tier raw and icarus_project.stage compression",
-  'stage0':        "icarus_project.stage stage0",
-  'stage1':        "icarus_project.stage in ( stage1, stage1_caf_larcv )",
-} # StageDimensions
-
-# this is a modal flag that is dangerous enough to be not user-controlled:
-# if `True`, queries without specifying a run number will be allowed.
-AllowAllRuns = False
-
-
-# ------------------------------------------------------------------------------
-def isSAMauthenticated(samweb) -> "whether samweb connection is authenticated":
-  if not samweb: return False
-  try:
-    serverInfo = samweb.serverInfo()
-  except:
-    logging.debug("Failed to get SAM server information!")
-    return False
-  return "unauthenticated" not in serverInfo.lower()
-# isSAMauthenticated()
 
 
 # ------------------------------------------------------------------------------
 class SampleInfo:
   def __init__(self,
     run=None, stage=None, stream=None, projectVersion=None,
-    minSize: "MiB" = None, extraDims=[], suffix="",
+    minSize: "MiB" = None,
     ):
     self.run = SampleInfo._copyList(run)
     self.stage = SampleInfo._copyList(stage)
     self.stream = SampleInfo._copyList(stream)
     self.projectVersion = SampleInfo._copyList(projectVersion)
     self.minSize = minSize if minSize else 0
-    self.extraDims = SampleInfo._copyList(extraDims)
-    self.suffix = suffix
   # __init__()
   
   def isRunDefined(self) -> "returns if run is collapsed to a value":
@@ -122,7 +71,7 @@ class SampleInfo:
       components.append(self.stream.replace("%", "")) # remove SAM wildcards
     if self.isProjectVersionComplete() and self.projectVersion is not None:
       components.append(self.projectVersion)
-    return "_".join(filter(None, components)) + self.suffix
+    return "_".join(filter(None, components))
   # defName()
   
   def copy(self, **kwargs):
@@ -130,9 +79,7 @@ class SampleInfo:
     kwargs.setdefault('stage', self.stage),
     kwargs.setdefault('stream', self.stream),
     kwargs.setdefault('projectVersion', self.projectVersion),
-    kwargs.setdefault('extraDims', self.extraDims),
     kwargs.setdefault('minSize', self.minSize),
-    kwargs.setdefault('suffix', self.suffix),
     return SampleInfo(**kwargs)
   # copy()
   
@@ -141,8 +88,6 @@ class SampleInfo:
     if self.stage: s += f", stage {self.stage}"
     if self.stream: s += f", stream {self.stream}"
     if self.projectVersion: s += f", project version {self.projectVersion}"
-    if self.extraDims:
-      s += f", extra constraints: {' AND '.join(self.extraDims)}"
     return s
   # __str__()
   
@@ -183,7 +128,6 @@ class DimensionQueryMaker:
       dims.append(
         DimensionQueryMaker.comparedItem('file_size', info.minSize << 20, ">=")
         )
-    dims.extend(info.extraDims)
     query = " and ".join(filter(None, dims))
     if len(dims) < minimum:
       raise RuntimeError(f"Query resulted in only {len(dims)} constraints: '{query}'")
@@ -238,8 +182,7 @@ class SampleBrowser:
   
   def __init__(self, samweb):
     self.samweb = samweb if samweb else SAMWebClient()
-    self.isAuthenticated = isSAMauthenticated(self.samweb)
-  # __init__()
+  
   
   def iterateProjectVersions(self, info: "SampleInfo object defining iteration ranges"):
     assert self.samweb, "SAM web client not initialized. We do not go anywhere."
@@ -248,7 +191,7 @@ class SampleBrowser:
     
     # expand the project versions: each version will be treated separately
     if info.projectVersion is None or forceSeparateVersions:
-      if info.stage not in ( 'compressedraw', 'raw' ) or forceSeparateVersions:
+      if info.stage != 'raw' or forceSeparateVersions:
         versionQuery = DimensionQueryMaker()(info, minimum=2)
         projectVersions = self._discoverProjectVersions(versionQuery)
       else: projectVersions = [ None ] # no version constraint is ok for raw files
@@ -339,14 +282,15 @@ class SampleProcessClass:
     self.minSize = minSize if minSize else 0
     
     self.samweb = samweb if samweb else SAMWebClient()
-    self.isAuthenticated = isSAMauthenticated(self.samweb)
-    if not self.isAuthenticated:
-      logging.debug("Connection to SAM appears not to be authenticated.")
-    
     self.buildQuery = DimensionQueryMaker()
     
-    self.SAMuser = None
-    self._fetchSAMuser(required=self.prependUser)
+    try: self.SAMuser = samweb.get_user()
+    except samexcpt.Error as e:
+      if self.prependUser:
+        logging.error("Could not find out your name! %s", e)
+        raise
+      self.SAMuser = None
+    #
     
   # __init__()
   
@@ -470,18 +414,8 @@ class SampleProcessClass:
         self.samweb.createDefinition(defname=defName, dims=dim, description=descr)
         print(f"{defName} created ({count} files)")
       except samexcpt.Error as e:
-        if not self.isAuthenticated:
-          logging.error(
-            f"Failed to create definition {defName} from query='{dim}'"
-            " (%s exception)."
-            "\nSAM connection is not authenticated,"
-            " which may be the cause of the issue.",
-            e.__class__.__name__,
-            )
-        else:
-          logging.error \
-            (f"Failed to create definition {defName} from query='{dim}': %s", e)
-        # if ... else
+        logging.error \
+          (f"Failed to create definition {defName} from query='{dim}': %s", e)
         return None
     # if
     return defName
@@ -504,16 +438,20 @@ class SampleProcessClass:
     ForcedMsg = { True: "forced to delete it anyway", False: "won't delete unless forced to", }
     checksOk = True
     
-    self._fetchSAMuser()
+    if not self.SAMuser:
+      try: self.SAMuser = self.samweb.get_user()
+      except samexcpt.Error as e:
+        logging.error("Could not find out your name! %s", e)
+    # if not cached already
     try: SAMgroup = self.samweb.get_group()
     except samexcpt.Error as e:
       logging.error("Could not find out the name of your group! %s", e)
-    logging.debug(f"You appear to be {self.SAMuser!r} of group {SAMgroup!r}")
+    logging.debug(f"You appear to be {SAMuser!r} of group {SAMgroup!r}")
     
-    if defInfo['username'] != self.SAMuser:
+    if defInfo['username'] != SAMuser:
       logging.warning(
         f"Definition {defName!r} was created on {defInfo['create_time']}"
-        f" by {defInfo['username']}/{defInfo['group']}, not by you ({self.SAMuser})"
+        f" by {defInfo['username']}/{defInfo['group']}, not by you ({SAMuser})"
         f": won't delete."
         )
       checksOk = False
@@ -607,16 +545,6 @@ class SampleProcessClass:
   
   def describeSample(self, info): return "ICARUS data " + str(info)
   
-  def _fetchSAMuser(self, required=True):
-    if self.SAMuser: return
-    try: self.SAMuser = self.samweb.get_user()
-    except samexcpt.Error as e:
-      if required:
-        logging.error("Could not find out your name! %s", e)
-        raise
-    # try ... except
-  # _fetchSAMuser()
-  
 # class SampleProcessClass
 
 
@@ -629,6 +557,99 @@ def collapseList(l):
 # collapseList()
 
 
+
+
+# ------------------------------------------------------------------------------
+def readFileList(f: "file object already opened in text mode"):
+  
+  l = []
+  for line in f:
+    line = line.strip()
+    if not line or line[0] == '#': continue # skip comments and empty lines
+    l.append(os.path.basename(line))
+  # for
+  
+  return l
+# readFileList()
+
+
+
+# ------------------------------------------------------------------------------
+def readInputFiles(options):
+  
+  l = []
+  for fileList in options.list:
+    with open(fileList, 'r') as f:
+      fl = readFileList(f)
+    logging.info("Read %d file names from '%s'", len(fl), fileList)
+    l.extend(fl)
+  # for
+  
+  if options.stdin:
+    fl = readFileList(sys.stdin)
+    logging.info("Read %d file names from standard input", len(fl))
+    l.extend(fl)
+  # for
+  
+  if len(fl) != len(l):
+    logging.info("Read %d file names overall.", len(l))
+  
+  return l
+# readInputFiles()
+
+
+# ------------------------------------------------------------------------------
+def extractSAMfileIDs(samweb, fileNames):
+  
+  assert samweb
+  
+  # honour a limit on the number of files
+  MaxFilesPerRequest = 1000 # current SAMWeb limitation
+  nChunks = int(math.ceil(len(fileNames) / 1000))
+  chunkSize = int(math.ceil(len(fileNames) / nChunks))
+  metadata = []
+  chunkStart = 0
+  logging.debug("Querying SAM for %d files in %d chunks:", len(fileNames), nChunks)
+  while chunkStart < len(fileNames):
+    chunkEnd = chunkStart + chunkSize
+    queryList = fileNames[chunkStart:chunkEnd]
+    logging.debug(" [%d] %d files", chunkStart/chunkSize, len(queryList))
+    chunkMetadata = samweb.getMultipleMetadata(queryList, basic=True)
+    metadata.extend(chunkMetadata)
+    chunkStart = chunkEnd
+  # while
+  
+  if len(metadata) != len(fileNames):
+    # ok, some files are missing and we haven't been told; let's figure out...
+    # note that here we remove duplicates
+    available = set(info['file_name'] for info in metadata)
+    requested = set(fileNames)
+    unknown = requested - available
+    
+    if args.keepgoing:
+      logging.warning("%d files from input are not declared in SAM.",
+        len(unknown))
+    else:
+      logging.error("The following %d files are not declared in SAM:",
+                    len(unknown))
+      padding = len(str(len(unknown)))
+      for i, fileName in enumerate(unknown, start=1):
+        logging.error("[%0*d] '%s'", i, padding, fileName)
+      
+      sys.exit(1)
+    # if ... else
+  # if missing
+  
+  IDs = set(info['file_id'] for info in metadata)
+  
+  logging.debug("Found %d file IDs out of %s input requests.",
+    len(IDs), len(fileNames))
+  
+  return IDs
+# extractSAMfileIDs()
+
+
+# ------------------------------------------------------------------------------
 if __name__ == "__main__":
   import sys
   import argparse
@@ -636,51 +657,26 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser(description=__doc__,
     formatter_class=argparse.RawDescriptionHelpFormatter)
   
-  SampleGroup = parser.add_argument_group(title="Sample selection")
-  SampleGroup.add_argument("runs", nargs="*" if AllowAllRuns else "+", type=int,
-    help="runs to process")
-  SampleGroup.add_argument("--stage", "-s", action="append",
-    help=f"stages to include {DefaultStages}")
-  SampleGroup.add_argument("--prjversion", "-p", action="append",
-    help="project versions to include [autodetect (resource-intensive!)]")
-  SampleGroup.add_argument("--stream", "-f", action="append",
-    help="data streams to include (use 'any' for... any) [any]")
-  SampleGroup.add_argument("--and", "--dim", "-a", dest='dims',
-    action="append", default=[],
-    help="additional constraint (not reflected in definition name)",
-    )
-  SampleGroup.add_argument("--global", "-g", dest='globalDef',
-    action="store_true", help="do not prepend SAM user name to definitions")
-  SampleGroup.add_argument("--minsize", "-S", dest='minimumSize',
-    action='store', nargs='?', default=None, const=8, type=int,
-    help="include only files larger than this size (MiB) [8 MiB if no value]")
-  SampleGroup.add_argument("--knownstages", dest='printKnownStages',
-    action="store_true",
-    help="prints the stage names that have special configuration")
+  parser.add_argument("SAMdefName",
+    help="SAM definition to be created")
   
-  ActionGroup = parser.add_argument_group(title="Actions")
-  ActionGroup.add_argument("--check", action="store_true",
-    help="prints whether the definition for the sample is available")
-  ActionGroup.add_argument("--describe", action="store_true",
-    help="describes an existing definition for the sample")
-  ActionGroup.add_argument("--query", action="store_true",
-    help="queries the definitions related to the samples")
-  ActionGroup.add_argument("--defname", action="store_true",
-    help="prints the name of the definitions related to the samples")
-  ActionGroup.add_argument("--create", action="store_true",
-    help="creates one definition per sample (use --defname to see their names)")
-  ActionGroup.add_argument("--delete", action="store_true",
-    help="attempts to remove one definition per sample")
+  parser.add_argument("--description", "--descr",
+    help="use this description for the definition (default: input list)")
+  parser.add_argument("--keepgoing", "-k", action="store_true",
+    help="skip input files that are not declared in SAM")
+  
+  InputGroup = parser.add_argument_group(title="Input files")
+  InputGroup.add_argument("--list", "-l", action="append", default=[],
+    help="add all files in this filelist (one per line, # at start ignored)")
+  InputGroup.add_argument("--stdin", "-c", action="store_true",
+    help="add all files from standard input (one per line, # at start ignored)")
   
   GeneralOptGroup = parser.add_argument_group(title="General options")
   GeneralOptGroup.add_argument("--experiment", "-e", default=ExperimentName,
     help="sets the experiment name (for definitions) [%(default)s]")
   GeneralOptGroup.add_argument("--samexperiment", "-E",
     help="sets the experiment name (chooses SAM database) [same as --experiment]")
-  GeneralOptGroup.add_argument("--suffix", default='',
-    help="add this suffix (verbatim) to definition name (hint: start with '_')")
-  GeneralOptGroup.add_argument("--auth", dest="AuthMode",
-    choices=[ 'token', 'cert', 'none' ],
+  GeneralOptGroup.add_argument("--auth", dest="AuthMode", choices=[ 'token', 'cert' ],
     default='token', help="choose authentication method for SAM [%(default)s]")
   GeneralOptGroup.add_argument("--force", "-F", action="store_true",
     help="skips safety checks of some operations")
@@ -694,44 +690,54 @@ if __name__ == "__main__":
   args = parser.parse_args()
   
   logging.getLogger().setLevel(logging.DEBUG if args.debug else logging.INFO)
-  if args.printKnownStages:
-    print(f"There are {len(StageDimensions)} known stages: {', '.join(StageDimensions)}.")
-    sys.exit(0)
-  if not args.runs and not AllowAllRuns:
-    raise RuntimeError("The run numbers to process are required.")
-    
-  if args.stage is None: args.stage = DefaultStages
-  if args.stream:
-    args.stream = [ None if s == "any" else s for s in args.stream ]
+
+  #
+  # read input files
+  #
+  inputList = readInputFiles(args)
+  
+  #
+  # contact SAM
+  #
   ExperimentName = args.experiment
   SAMexperiment = args.samexperiment if args.samexperiment else ExperimentName.lower()
-
   logging.debug("Using SAM database '%s'.", SAMexperiment)
   samweb = SAMWebClient(
     experiment=SAMexperiment,
     disable_cert_auth=(args.AuthMode != 'cert'),
     disable_token_auth=(args.AuthMode != 'token'),
     )
-  iterateSamples = SampleBrowser(samweb)
-  processInfo = SampleProcessClass(samweb,
-    create=args.create, query=args.query, printDefs=args.defname,
-    describe=args.describe, check=args.check, delete=args.delete,
-    fake=args.fake, force=args.force,
-    prependUser=not args.globalDef,
-    )
   
-  baseSampleInfo = SampleInfo(
-    run=collapseList(args.runs if args.runs else None),
-    stage=collapseList(args.stage),
-    stream=collapseList(args.stream), # None means any
-    projectVersion=collapseList(args.prjversion), # None for autodetect
-    extraDims=args.dims,
-    minSize=args.minimumSize,
-    suffix=args.suffix,
-    )
+  #
+  # discover the file IDs
+  #
+  fileIDs = extractSAMfileIDs(samweb, inputList)
+
+  #
+  # create the definition
+  #
+  SAMdefName = args.SAMdefName
+  if args.description:
+    descr = args.description
+  else:
+    sources = []
+    if args.list:
+      sources.append(f"{len(args.list)} file lists ({', '.join(args.list)})")
+    if args.stdin: sources.append("standard input")
+    descr = f"from {len(inputList)} requested files from " + " + ".join(sources)
+  #
   
-  for sampleInfo in iterateSamples(baseSampleInfo):
-    processInfo(sampleInfo)
+  dimensions = f"file_id in ({', '.join(map(str, fileIDs))})"
+  logging.debug("Dimensions for %s:\n%s", SAMdefName, dimensions)
+  if args.fake:
+    logging.info(
+      "SAM definition '%s' would be created with %d files and description:\n%s",
+      SAMdefName, len(fileIDs), descr)
+  else:
+    samweb.createDefinition(SAMdefName, dimensions, description=descr)
+    logging.info("SAM definition '%s' created with %d files.",
+      SAMdefName, len(fileIDs))
+  #
   
   sys.exit(0)
 # main

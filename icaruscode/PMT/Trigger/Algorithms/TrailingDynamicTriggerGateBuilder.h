@@ -1,14 +1,14 @@
 /**
- * @file   icaruscode/PMT/Trigger/Algorithms/DynamicTriggerGateBuilder.h
+ * @file   icaruscode/PMT/Trigger/Algorithms/TrailingDynamicTriggerGateBuilder.h
  * @brief  Dynamic gate builder.
  * @author Gianluca Petrillo (petrillo@slac.stanford.edu)
  * @date   April 1, 2019
- * @see    `icaruscode/PMT/Trigger/Algorithms/DynamicTriggerGateBuilder.cxx`
+ * @see    `icaruscode/PMT/Trigger/Algorithms/TrailingDynamicTriggerGateBuilder.cxx`
  * 
  */
 
-#ifndef ICARUSCODE_PMT_TRIGGER_ALGORITHMS_DYNAMICTRIGGERGATEBUILDER_H
-#define ICARUSCODE_PMT_TRIGGER_ALGORITHMS_DYNAMICTRIGGERGATEBUILDER_H
+#ifndef ICARUSCODE_PMT_TRIGGER_ALGORITHMS_TRAILINGDYNAMICTRIGGERGATEBUILDER_H
+#define ICARUSCODE_PMT_TRIGGER_ALGORITHMS_TRAILINGDYNAMICTRIGGERGATEBUILDER_H
 
 
 // ICARUS libraries
@@ -34,7 +34,7 @@ namespace icarus::trigger {
   // declarations
   //
   
-  class DynamicTriggerGateBuilder;
+  class TrailingDynamicTriggerGateBuilder;
   
   // ---------------------------------------------------------------------------
   
@@ -53,7 +53,7 @@ namespace icarus::trigger {
  * with lower threshold.
  * 
  */
-class icarus::trigger::DynamicTriggerGateBuilder
+class icarus::trigger::TrailingDynamicTriggerGateBuilder
   : public icarus::trigger::ManagedTriggerGateBuilder
 {
   using Base_t = icarus::trigger::ManagedTriggerGateBuilder;
@@ -63,8 +63,8 @@ class icarus::trigger::DynamicTriggerGateBuilder
     struct DynamicGateInfo: public GateInfoBase {
       DynamicGateInfo(TriggerGate_t& gate): GateInfoBase(gate) {}
       
-      void belowThresholdAt(optical_tick tick) { gate().closeAt(tick.value()); }
-      void aboveThresholdAt(optical_tick tick) { gate().openAt(tick.value()); }
+      void belowThresholdAt(optical_tick tick) { gate().openAt(tick.value()); }
+      void aboveThresholdAt(optical_tick tick) { gate().closeAt(tick.value()); }
       
     }; // struct DynamicGateInfo
     
@@ -92,7 +92,7 @@ class icarus::trigger::DynamicTriggerGateBuilder
   
   
   /// Constructor: sets the configuration.
-  DynamicTriggerGateBuilder(Config const& config)
+  TrailingDynamicTriggerGateBuilder(Config const& config)
     : Base_t(config) {}
   
   
@@ -119,10 +119,10 @@ class icarus::trigger::DynamicTriggerGateBuilder
     ) const;
   
   
-}; // class icarus::trigger::DynamicTriggerGateBuilder
+}; // class icarus::trigger::TrailingDynamicTriggerGateBuilder
 
 
 //------------------------------------------------------------------------------
 
 
-#endif // ICARUSCODE_PMT_TRIGGER_ALGORITHMS_DYNAMICTRIGGERGATEBUILDER_H
+#endif // ICARUSCODE_PMT_TRIGGER_ALGORITHMS_TRAILINGDYNAMICTRIGGERGATEBUILDER_H

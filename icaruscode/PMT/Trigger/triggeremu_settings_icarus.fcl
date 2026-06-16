@@ -187,6 +187,9 @@ triggeremu_config_icarus.settings.SlidingWindowTriggerPatternsWindowPair: [
   @local::icarus_triggergate_basic.patterns.S8,    # [8]
   @local::icarus_triggergate_basic.patterns.S10,   # [9]
   @local::icarus_triggergate_basic.patterns.S15    # [10]
+  @local::icarus_triggergate_basic.patterns.S4     # [11]
+  @local::icarus_triggergate_basic.patterns.S7     # [12]
+  @local::icarus_triggergate_basic.patterns.S9     # [13]
 ] # SlidingWindowTriggerPatternsWindowPair
 
 

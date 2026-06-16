@@ -23,6 +23,7 @@
 #include "cetlib_except/exception.h"
 
 // C/C++ standard libraries
+#include <ostream>
 #include <algorithm> // std::lower_bound(), std::transform()
 #include <iterator> // std::back_inserter()
 
@@ -87,6 +88,29 @@ namespace {
       { return { seqValue.cbegin(), seqValue.cend() }; }
     
   }; // FHiCLsequenceWrapper
+  
+  
+  //----------------------------------------------------------------------------
+  template <typename Ops>
+  std::vector<icarus::trigger::ADCCounts_t> subtractWaveformBaseline
+    (Ops waveOps, std::vector<raw::ADC_Count_t> const& waveform)
+  {
+    using icarus::trigger::ADCCounts_t;
+    
+    auto const subtractor = [waveOps](float sample) -> ADCCounts_t
+      {
+        return
+          ADCCounts_t::castFrom(std::round(waveOps.subtractBaseline(sample)));
+      };
+    
+    std::vector<ADCCounts_t> signal;
+    signal.reserve(waveform.size());
+    std::transform
+      (begin(waveform), end(waveform), back_inserter(signal), subtractor);
+    
+    return signal;
+    
+  }; // icarus::trigger::details::subtractBaseline()
   
   
   //----------------------------------------------------------------------------
@@ -174,14 +198,6 @@ icarus::trigger::TriggerGateBuilder::TriggerGateBuilder(Config const& config)
   }
   
 } // icarus::trigger::TriggerGateBuilder::TriggerGateBuilder()
-  
-  
-//------------------------------------------------------------------------------
-void icarus::trigger::TriggerGateBuilder::setup
-  (detinfo::DetectorTimings const& timings)
-{
-  fDetTimings = timings;
-} // icarus::trigger::TriggerGateBuilder::setup()
 
 
 //------------------------------------------------------------------------------
@@ -214,6 +230,91 @@ auto icarus::trigger::TriggerGateBuilder::prepareAllGates() const
   return allGates;
   
 } // icarus::trigger::TriggerGateBuilder::prepareAllGates()
+
+
+//------------------------------------------------------------------------------
+void icarus::trigger::TriggerGateBuilder::doSetup
+  (detinfo::DetectorTimings const& timings, Polarity polarity)
+{
+  fDetTimings = timings;
+  doSetPolarity(polarity);
+} // icarus::trigger::TriggerGateBuilder::doSetup()
+
+
+//------------------------------------------------------------------------------
+void icarus::trigger::TriggerGateBuilder::doSetPolarity(Polarity polarity) {
+  
+  /*
+   * The functionality of changing polarity was not built in the first design.
+   * Before it, all waveforms were assumed to have negative polarity.
+   * In order not to make the existing algorithms that support only negative
+   * polarity in trouble, the default implementation does not accept any
+   * polarity other than the negative one, which is the also the class default.
+   * A builder which supports other polarities needs to override this method.
+   */
+  
+  if (polarity != Polarity::Negative)
+    throw cet::exception("TriggerGateBuilder")
+      << "Non-negative polarities not supported by this algorithm.\n";
+  forcePolarity(polarity);
+  
+} // icarus::trigger::TriggerGateBuilder::doSetPolarity()
+
+
+//------------------------------------------------------------------------------
+void icarus::trigger::TriggerGateBuilder::doDumpConfiguration(
+  std::ostream& out,
+  std::string const& indent, std::string const& firstIndent
+) const {
+  
+  dumpLocalConfiguration(out, indent, firstIndent);
+  
+} // icarus::trigger::TriggerGateBuilder::doDumpConfiguration()
+
+
+//------------------------------------------------------------------------------
+void icarus::trigger::TriggerGateBuilder::dumpLocalConfiguration(
+  std::ostream& out,
+  std::string const& indent, std::string const& firstIndent
+) const {
+  
+  out << firstIndent << " * configured " << fChannelThresholds.size()
+    << " discrimination thresholds:";
+  for (ADCCounts_t const thr: fChannelThresholds)
+    out << " " << thr;
+  out << "\n" << indent
+    << " * input signals have "
+    << util::StandardSelectorFor<util::SignalPolarity>{}.get(fPolarity).name()
+    << " polarity";
+  
+} // icarus::trigger::TriggerGateBuilder::dumpLocalConfiguration()
+
+
+//------------------------------------------------------------------------------
+auto icarus::trigger::TriggerGateBuilder::subtractBaseline
+  (WaveformWithBaseline const& waveformData) const -> std::vector<ADCCounts_t>
+{
+  using namespace icarus::waveform_operations;
+  
+  std::vector<raw::ADC_Count_t> const& samples
+    = waveformData.waveform().Waveform();
+  float const baseline
+    = static_cast<float>(waveformData.baseline().baseline());
+  
+  switch (fPolarity) {
+    case Polarity::Positive:
+      return subtractWaveformBaseline
+        (PositivePolarityOperations<float>{ baseline }, samples);
+    case Polarity::Negative:
+      return subtractWaveformBaseline
+        (NegativePolarityOperations<float>{ baseline }, samples);
+    default:
+      throw cet::exception("TriggerGateBuilder")
+        << "Logic error: polarity " << static_cast<int>(fPolarity)
+        << " not supported.\n";
+  } // switch
+  
+} // icarus::trigger::TriggerGateBuilder::subtractBaseline()
 
 
 //------------------------------------------------------------------------------
