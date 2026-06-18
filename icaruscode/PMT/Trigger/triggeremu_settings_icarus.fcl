@@ -164,7 +164,7 @@ triggeremu_config_icarus.settings.trigger_channel_pairings_nosingle: [
 
 
 # settings for plotting efficiency under patterns of sliding window triggers
-# firing during beam time
+# firing during beam time (patterns are from `trigger_icarus.fcl`)
 triggeremu_config_icarus.settings.SlidingWindowTriggerPatternsSingleWindow: [
   @local::icarus_triggergate_basic.patterns.M1,  # from trigger_icarus.fcl
   { inMainWindow: 2                       },
@@ -186,9 +186,9 @@ triggeremu_config_icarus.settings.SlidingWindowTriggerPatternsWindowPair: [
   @local::icarus_triggergate_basic.patterns.S5,    # [7]
   @local::icarus_triggergate_basic.patterns.S8,    # [8]
   @local::icarus_triggergate_basic.patterns.S10,   # [9]
-  @local::icarus_triggergate_basic.patterns.S15    # [10]
-  @local::icarus_triggergate_basic.patterns.S4     # [11]
-  @local::icarus_triggergate_basic.patterns.S7     # [12]
+  @local::icarus_triggergate_basic.patterns.S15,   # [10]
+  @local::icarus_triggergate_basic.patterns.S4,    # [11]
+  @local::icarus_triggergate_basic.patterns.S7,    # [12]
   @local::icarus_triggergate_basic.patterns.S9     # [13]
 ] # SlidingWindowTriggerPatternsWindowPair
 
