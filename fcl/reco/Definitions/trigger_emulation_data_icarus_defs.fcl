@@ -1,4 +1,4 @@
-# File:    trigger_emulation_data_icarus.fcl
+# File:    trigger_emulation_data_icarus_defs.fcl
 # Purpose: settings for ICARUS trigger emulation on full detector data
 # Author:  Gianluca Petrillo (petrillo@slac.stanford.edu)
 # Date:    September 12, 2023
@@ -139,8 +139,8 @@ trigSimTemplate: {
   # (use `lar --print-description TriggerSimulationOnGates` to see the syntax)
   Pattern:               @nil
 
-  # Beam gate from the trigger hardware (with a kick):
-  BeamGates:              shiftedTriggerGate
+  # Beam gate directly from the trigger hardware
+  BeamGates:              daqTrigger
   BeamGateReference:      BeamGate
   
   # for trigger time plots:
@@ -149,7 +149,9 @@ trigSimTemplate: {
   # for... nothing
   TriggerTimeResolution: "8 ns"
   
-  TriggerDelay:           @local::triggeremu_config_icarus.settings.TriggerDelay # triggeremu_settings_icarus.fcl via trigger_emulation_data_config_icarus.fcl
+  # from triggeremu_settings_icarus.fcl via trigger_emulation_data_config_icarus.fcl:
+  TriggerInputDelay:     @local::triggeremu_config_icarus.settings.TriggerInputDelay
+  TriggerOutputDelay:    @local::triggeremu_config_icarus.settings.TriggerOutputDelay
   
   # specific for Run3:
   TriggerOnTransition:    true
@@ -275,12 +277,6 @@ triggeremulation_data_producers: {
     
   } # pmtaddertriggerwindows
   
-  shiftedTriggerGate: {
-    BeamGateTag: "daqTrigger"
-    Changes: [{Start: {Add: "-150 ns"}  Select: { Types: [ "BNB", "NuMI" ] }}]
-    module_type: FixBeamGateInfo
-  }
-  
   emuTrigger: { # this is S4
     @table::trigSimTemplate
     Pattern:       @local::icarus_triggergate_basic.patterns.S4
@@ -361,8 +357,7 @@ triggeremulation_data_paths: {
     , pmttriggerwindows
     ]
   emulation: [
-      shiftedTriggerGate
-    , emuTrigger
+      emuTrigger
     ]
   
   # (more to follow)

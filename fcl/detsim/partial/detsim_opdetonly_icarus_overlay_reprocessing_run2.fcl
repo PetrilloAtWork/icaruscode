@@ -1,4 +1,4 @@
-## File:    stage0_run2_opdetonly_icarus_data_reprocessing.fcl
+## File:    detsim_opdetonly_icarus_overlay_reprocessing_run2.fcl
 ## Purpose: Reprocessing of the optical products for the 2025 SBN "spring" OVERLAY MC production
 
 #include "detsim_2d_icarus_refactored.fcl"
@@ -20,7 +20,8 @@
 ## that was observed at a certain time with respect to the generated signal
 ## (simulation time) after reprocessing will show later, by ~265 ns on average.
 ## For this reason the "beam gate", i.e. the time interval the trigger is
-## evaluated on, is also delayed by 265 ns.
+## evaluated on, is also delayed by 265 ns compared to the past (125 ns are
+## "eaten" by the trigger input delay which is also a "new" handle).
 ##
 ##
 
@@ -97,10 +98,10 @@ physics.producers: {
   }
 
   # opdaq Run-1/2 tune for overlays (no noise)
-  opdaq: @local::icarus_simpmt_run2_nonoise 
+  opdaq: @local::icarus_simpmt_run2_nonoise
 
   # triggersim producers
-  @table::icarus_shifting_triggersim.producers
+  @table::icarus_shifting_triggersim.producers  # from `trigger_emulation_icarus.fcl`
 
   # The purpose of beam gate modifications is to open the trigger gate always on
   # the same PMT waveform activity. The gate in `shifted` is equivalent to the
@@ -115,7 +116,7 @@ physics.producers: {
   triggersimgatesinit: {
     module_type: FixBeamGateInfo
     BeamGateTag: shifted
-    Changes: [ { Start: { Add: "+265 ns" } } ]
+    Changes: [ { Start: { Set: "140 ns" } } ]
   }
   
   # crt hits

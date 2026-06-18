@@ -58,7 +58,7 @@ void icarus::trigger::TrailingFixedTriggerGateBuilder::dumpLocalConfiguration(
   out << firstIndent << " * algorithm: TrailingFixedTriggerGateBuilder"
     << "\n" << indent << " * open a " << fGateDuration
       << " gate when going under threshold"
-    << "\n" << indent << " * if a crossing happens in while the gate is open, "
+    << "\n" << indent << " * if a crossing happens while the gate is open, "
       << (fExtendGate? "extend the gate": "ignore it")
     ;
   

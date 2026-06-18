@@ -93,6 +93,8 @@ BEGIN_PROLOG
 # including this configuration file
 # (setting the whole `settings: { ... }` block would just get rid of the whole
 #  content of `settings` regardless the protection level of each item within)
+# `triggeremu_config_icarus` is defined in `triggeremu_settings_icarus.fcl`;
+# `icarus_triggertiming` is defined in `trigger_icarus.fcl`.
 
 triggeremu_data_config_icarus.settings.missing_pmt_channels                    : @local::triggeremu_config_icarus.settings.missing_pmt_channels
 triggeremu_data_config_icarus.settings.BeamGate.Duration                       : @local::triggeremu_config_icarus.settings.BeamGate.Duration
@@ -107,8 +109,11 @@ triggeremu_data_config_icarus.settings.EnabledWindowsTilingW                   :
 triggeremu_data_config_icarus.settings.EnabledWindowsSlidingE                  : @local::triggeremu_config_icarus.settings.EnabledWindowsSlidingE
 triggeremu_data_config_icarus.settings.EnabledWindowsSlidingW                  : @local::triggeremu_config_icarus.settings.EnabledWindowsSlidingW
 triggeremu_data_config_icarus.settings.SlidingWindowTriggerPatterns            : @local::triggeremu_config_icarus.settings.SlidingWindowTriggerPatterns
+# TODO: the following settings are for Run2 only
+triggeremu_data_config_icarus.settings.TriggerInputDelay                       : @local::icarus_triggertiming.TriggerInputDelay
+triggeremu_data_config_icarus.settings.TriggerOutputDelay                      : @local::icarus_triggertiming.TriggerOutputDelay
 
-#Input for adders work
+# input for adders work
 triggeremu_data_config_icarus.settings.EnabledWindowsCentralAddersSlidingE : [ 2, 7 ]
 triggeremu_data_config_icarus.settings.EnabledWindowsCentralAddersSlidingW : [ 12, 17 ]
 

@@ -278,6 +278,9 @@ icarus_triggergate_run4: {
   
 } # icarus_triggergate_run4
 
+# Configuration to reproduce at the best of our understanding the hardware
+# configuration in Run5, that is the same as Run4.
+icarus_triggergate_run5: @local::icarus_triggergate_run4
 
 icarus_fixedtriggergate: @local::icarus_triggergate_run4
 
@@ -330,32 +333,129 @@ icarus_region_finder: {
 #            because of simulated propagation time from the flux window (-20 m)
 #            to the face of the detector (~-10 m); values hard-coded because
 #            they're observed in Run2 data
+# [20260616] detaching the "trigger input" delay of 224 ns from the gate start
 #
+# Data summary:    |       Run2        |       Run3        |  Run4   |  Run5   |
+#                  |   BNB   |  NuMI   |   BNB   |  NuMI   |   BNB   |   BNB   |
+# ---------------- | ------- | ------- | ------- | ------- | ------- | ------- |
+# Trigger delay    |  225 ns |  225 ns |  225 ns |  225 ns |  225 ns |      ns |
+# Beam gate porch  |  125 ns |  225 ns |  225 ns |  325 ns |  225 ns |      ns |
+# Total gate delay | -350 ns | -450 ns | -450 ns | -550 ns | -450 ns |      ns |
+# Spill width      | 1600 ns | 9500 ns | 1600 ns | 9500 ns | 1600 ns |      ns |
+# Beam gate tail   |  350 ns |  250 ns |  375 ns | 1175 ns |  375 ns |      ns |
+# Gate width       | 2100 ns |10200 ns | 2200 ns |11000 ns | 2200 ns |      ns |
+# 
+# These figures are arbitrarily rounded to match known values,
+# since they are anyway uncertain because of their jitters.
+# Run3 refers to the "stable" part from April on.
+# 
+# A model of how times go in triggering:
+# 
+# | cosmic ray crosses (just in time for being triggered, whatever that time is)
+# |==1==| scintillation, photons arrive at PMT
+#    :  |==2==| signal at digitizers
+#    :     :  |==3==| LVDS signals at trigger logic (just in time for beam gate)
+#  60 ns   :     :  |<-- "beam gate" opens (timestamp)
+#        265 ns  :  |==5==| trigger logic evaluation, firing and timestamp
+#              375 ns  :    <= "beam gate" opens (timestamp)
+#                    225 ns
+# (2) was measured with laser runs: average 265 ns
+# (3+4+5) from waveforms of triggering light and trigger signal: 600 ns
+# (4) from beam timestamp time to when trigger logic activates: assumed null
+# (5) from earliest trigger minus beam gate timestamp: 225 ns
+# (1) from CRT-PMT synchronization: 60 ns?
+# 
+# A number of (minor?) delays are neglected or implicitly included. For example:
+#  * delay 4 may be one or two FPGA ticks (25 ns each)
+# 
+# When including neutrinos in simulation, the delay from simulation time start
+# (when the first neutrino is generated 11 m upstream of the active volume) to
+# the active volume needs to be added upfront (11 m / c = 35 ns).
+# 
+# Beam gate alignment can be extracted from data by matching emulation and
+# actual trigger time from `raw::Trigger`:
+#  * `TriggerTime()` for time alignment (trigger input + output delay)
+#  * `TriggerTime() - BeamGateTime()` for the beam gate 
+# 
+# 
+# The "trigger delay" turns into `TriggerInputDelay` of the simulation.
+# The starting of the beam gate is contributed by:
+#  1. the neutrino propagation delay (35 ns)
+#  2. the PMT average cable delay (+265 ns)
+#  3. the opposite of the beam gate porch (table above)
+#  4. the opposite of the trigger delay (table above)
+#  5. the opposite of the trigger timestamping delay (-125 ns)
+# The first two delays point to the signal generated at t=0 at PMT digitization.
+# The third one allows triggering on signal earlier than the spill.
+# The fourth says how earlier we need to open the gate to catch that signal.
+#
+# This was for simulation. For data (emulation on actual PMT signal), we already
+# have the beam gate that was used to get the trigger distributions we observe;
+# But the simulation 
+#
+icarus_triggertiming_Run2: {
+  BNB:  { Start:  { SetTo: "-0.050 us" } Width:  { SetTo:  "2.1 us" } }
+  NuMI: { Start:  { SetTo: "-0.150 us" } Width:  { SetTo: "10.2 us" } }
+  
+  TriggerInputDelay:  "0 ns"
+  TriggerOutputDelay: "0 ns"
+  TriggerLVDSdelay:   "0 ns"
+  
+} # icarus_triggertiming_Run2
+
+icarus_triggertiming_Run3: {
+  BNB:  { Start:  { SetTo: "-0.150 us" } Width:  { SetTo:  "2.1 us" } }
+  NuMI: { Start:  { SetTo: "-0.250 us" } Width:  { SetTo: "10.2 us" } }
+  
+  TriggerInputDelay:  "0 ns"
+  TriggerOutputDelay: "0 ns"
+  TriggerLVDSdelay:   "0 ns"
+  
+} # icarus_triggertiming_Run3
+
+icarus_triggertiming_Run4: {
+  # tuning on 20260617 by petrillo@slac.stanford.edu based on run 14292 (end of Run5)
+  BNB:  { Start:  { SetTo: "-0.150 us" } Width:  { SetTo:  "2.1 us" } }
+  NuMI: { Start:  { SetTo: "-0.250 us" } Width:  { SetTo: "10.2 us" } }
+  
+  TriggerInputDelay:  " 90 ns" # start of hardware trigger - beam gate profile
+  TriggerOutputDelay: "225 ns" # +/- 12 ns: emulated trigger time minus hardware trigger time
+  TriggerLVDSdelay:     "0 ns"
+  
+} # icarus_triggertiming_Run4
+
 icarus_triggersimgates_Run2: {
-
   module_type: FixBeamGateInfo
-
   BeamGateTag: beamgate
-
-  Changes: [  # gates of type not included are left unchanged
-    { # for BNB gates
-      Select: { Types: [ "BNB" ] }
-      Start:  { SetTo: "+0.100 us" }
-      Width:  { SetTo: "2.1 us" }
-    },
-    { # for NuMI gates
-      Select: { Types: [ "NuMI" ]}
-      Start:  { SetTo: "+0.065 us" }
-      Width:  { SetTo: "10.0 us" }
-    }
+  Changes: [
+    { Select: { Types: [ "BNB"  ] } @table::icarus_triggertiming_Run2.BNB  },
+    { Select: { Types: [ "NuMI" ] } @table::icarus_triggertiming_Run2.NuMI }
     ]
-
 } # icarus_triggersimgates_Run2
 
+icarus_triggersimgates_Run3: {
+  @table::icarus_triggersimgates_Run2
+  Changes: [
+    { Select: { Types: [ "BNB"  ] } Start:  { SetTo: "-0.150 us" } Width:  { SetTo:  "2.2 us" } },
+    { Select: { Types: [ "NuMI" ] } Start:  { SetTo: "-0.250 us" } Width:  { SetTo: "11.0 us" } }
+    ]
+} # icarus_triggersimgates_Run3
+
+icarus_triggersimgates_Run4: {
+  @table::icarus_triggersimgates_Run2
+  Changes: [
+    { Select: { Types: [ "BNB"  ] } Start:  { SetTo: "-0.150 us" } Width:  { SetTo:  "2.2 us" } }
+    ]
+} # icarus_triggersimgates_Run4
+
+icarus_triggersimgates_Run5: {  # provisional
+  @table::icarus_triggersimgates_Run4
+} # icarus_triggersimgates_Run5
 
 icarus_triggersimgates_Run1: @local::icarus_triggersimgates_Run2
 
-icarus_triggersimgates: @local::icarus_triggersimgates_Run2
+icarus_triggertiming: @local::icarus_triggertiming_Run4
+icarus_triggersimgates: @local::icarus_triggersimgates_Run4
 
 
 ###

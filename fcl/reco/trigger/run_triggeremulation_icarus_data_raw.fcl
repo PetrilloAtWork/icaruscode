@@ -87,7 +87,7 @@ physics.analyzers: @local::triggeremulation_data_analyzers
 
 physics.output:  [ rootoutput ]
 
-physics: { # import all paths from triggeremulation_data_icarus
+physics: { # import all paths from `trigger_emulation_data_icarus_defs.fcl`
   @table::physics
   @table::triggeremulation_data_paths
 }

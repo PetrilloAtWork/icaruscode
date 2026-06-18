@@ -217,8 +217,11 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  *     will not suppress one at the beginning of the next one even if that is
  *     within the set dead time. If set to a very large value (as the default),
  *     only one trigger will be found per input gate.
- * * `TriggerDelay` (time, default: `0 ns`): fixed time to add to the time of
- *     all the triggers.
+ * * `TriggerInputDelay` (time, default: `0 ns`): fixed time it takes the input
+ *     signal on the PMT waveform to get to the trigger logic evaluation.
+ * * `TriggerOutputDelay` (time, default: `0 ns`): fixed time it takes to the
+ *     trigger to evaluate the logic, produce a result and timestamp it.
+ *     of all the triggers.
  * * `EmitEmpty` (flag, default: `true`): if set, each beam gate gets at least a
  *     trigger object, and if there is no trigger during a gate its trigger
  *     object will be marked by having no bit set. If unset, when there is no
@@ -305,7 +308,7 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  *     `EmitEmpty` is set to `false`, in which case gates with no trigger will
  *     not contribute to the trigger collection.
  *     Each trigger object has the time stamp matching the time when the trigger
- *     criteria were satisfied, plus the fixed delay in the `TriggerDelay`
+ *     criteria were satisfied, plus the fixed delay in the `TriggerOutputDelay`
  *     configuration parameter. All triggers feature the bits specified in
  *     `BeamBits` configuration parameter, with the following exceptions:
  *     if there was no trigger found, the bits will all be cleared; and if there
@@ -343,11 +346,13 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  *       `triggerCount` is `0`, both in their default values.
  *     * `gateID` and `gateCount` match the event number.
  *     * `cryostats`: information per cryostat:
- *         * `beamToTrigger`: time from beam gate opening to the time trigger
- *           conditions are met. This interval does not include the
- *           `TriggerDelay`. The resolution of this time only reflects the
- *           digitized input resolution, without any quantization (e.g., from
- *           hardware clocks).
+ *         * `beamToTrigger`: time from when trigger logic starts being
+ *           evaluated to when the time trigger conditions are met.
+ *           This interval does not include the delays. The resolution of this
+ *           time only reflects the digitized input resolution, without any
+ *           quantization (e.g., from hardware clocks).
+ *           Note that this has higher precision (and a different start value)
+ *           than the result from ICARUS hardware.
  *         * `triggerLogicBits`: `sbn::bits::triggerLogic::PMTPairMajority` bit
  *           set if the first trigger is in this cryostat, all `0` otherwise.
  *         * `triggerCount`: number of triggers found in the gate. This is the
@@ -357,8 +362,8 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  *           at trigger time. A data product tag derived from `LVDSgatesTag`
  *           configuration parameter is used to read the state of all PMT pairs.
  *           The state of each pair is evaluated at the tick of the emulated
- *           trigger time (without the `TriggerDelay`) plus a specific freezing
- *           delay (from `LVDSstatusDelay` configuration parameter).
+ *           trigger time (without the `TriggerOutputDelay`) plus a specific
+ *           freezing delay (from `LVDSstatusDelay` configuration parameter).
  *           This state is assigned to a "logic LVDS" bit according to the LVDS
  *           bit mapping read from `IICARUSChannelMap` service
  *           (see `icarus::trigger::LVDSbitMaps`).
@@ -394,19 +399,96 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  * beyond the number of available bits effectively disables that option.
  * 
  * 
- * ### Trigger timing
+ * ### Trigger timing and delays
  * 
  * This module replicates the logic used by the hardware to provide a trigger
  * response, but it does not attempt to emulate the delays that occur in the
  * hardware. The trigger time is by default the instant when in the input
  * waveforms the conditions are met, assuming that their synchronization already
  * reflects the one on the hardware input.
- * The only allowance to the hardware timing is the option to add a _fixed_
- * delay (`TriggerDelay` configuration parameter) to all trigger times produced
- * by this module. The `beamToTrigger` delay, on the other end, is deliberately
- * excluded from that delay, and no specific delay is offered for it.
  * 
+ * The only allowance to the hardware timing is the option to add these _fixed_
+ * delays:
+ *  * The "input" delay (`TriggerInputDelay`) represents the delay the signal
+ *    input gets to the trigger logic (mostly due to hardware discrimination and
+ *    formation of LVDS signals); when the beam gate opens, the input it sees is
+ *    the one from the past that was delayed by this amount.
+ *  * The "output" delay (`TriggerOutputDelay`) represents the time from when
+ *    the input is available for logic evaluation to when eventual trigger is
+ *    timestamped.
+ *  * LVDS "freezing" delay (`LVDSstatusDelay`) represents the time it takes to
+ *    save the LVDS bits once the trigger has been decided. It is on top of the
+ *    input of the trigger, i.e. the value of this parameter should not include
+ *    the trigger input delay above, which is already accounted for.
  * 
+ * The delays affect the output in the following way:
+ *  * Beam gate times as stored are not affected by these delays at all.
+ *  * **Trigger response is evaluated on a gate that is effectively delayed with
+ *    respect to the requested "beam gate"** by the trigger input delay.
+ *  * LVDS status is read at a time that includes both the trigger input delay
+ *    and the LVDS freezing delay.
+ *  * Trigger time (in electronics time) and timestamp include both the trigger
+ *    input and output delays.
+ *  * `beamToTrigger` fields are deliberately excluded from all delay, since
+ *    they are based on the count (starting with 1) of the hardware tick at
+ *    which the trigger logic evaluated true.
+ * 
+ * #### Calibrating the delays and the beam gate
+ * 
+ * Obtaining the values of the input and output delay from data is easy.
+ * Using the data of a majority run and running this module with the nominal
+ * beam gate from the hardware (typically from trigger fragment decoding) and
+ * both delays set to zero:
+ * 1. The trigger output delay is the time between the beam gate opening and
+ *    the earliest possible trigger; a statistics of a few hundred triggers may
+ *    be needed to populate the early gate region with triggers, however this
+ *    delay has been proven very stable, always around 225 ns.
+ * 2. The total delay (input + output) is the difference between the time of the
+ *    emulated trigger and the time of the hardware trigger. A few tens of
+ *    triggers are sufficient to clearly identify the value of this difference.
+ * 
+ * The LVDS freezing delay is instead more complicate, needing to compare the
+ * hardware and emulated bits with different delays.
+ * 
+ * For neutrino simulation, provided that the appropriate PMT delays are
+ * included in the PMT waveforms (e.g. `icarus::opdet::PMTsimulationAlg`
+ * supports that), the fundamental delays from data should be still valid.
+ * However, the alignment of the gate to the neutrino spill needs to be tuned to
+ * reflect the one in data. The target can be measured from large distributions
+ * of triggered events acquired when a neutrino beam was turned on: it is the
+ * time from the first trigger (which in data has a `TriggerInputDelay` delay
+ * with respect to the opening of the beam gate) of the very first trigger from
+ * neutrino that can be observed. This will be an estimation, the less rough
+ * the more neutrino events are in the distribution.
+ * While it is possible to calibrate the beam gate start to have that time point
+ * at the correct position of the trigger time profile (i.e. trigger time minus
+ * beam gate start time), simulation has information enough to predict it.
+ * Most generators in LArSoft provide a "beam gate" (`sim::BeamGateInfo`) in
+ * @ref DetectorClocksSimulationTime "simulation time scale". Relevant delays to
+ * be taken into account include:
+ * 1. The time it takes to the generated neutrino to get to the detector active
+ *    volume. For example, some simulated BNB flux places neutrinos at
+ *    simulation time 0 and at 20 metre upstream of the center of the detector,
+ *    that is 11 metre from the beginning of the active volume, yielding ~35
+ *    nanoseconds of delay.
+ * 2. Fastest scintillation time and propagation of scintillation light to the
+ *    PMT. This takes at best few nanoseconds and can be neglected.
+ * 3. The time it takes to the scintillation photons at the PMT to be detected
+ *    and converted into a signal on the waveform. This delay is provided
+ *    channel by channel by `icarusDB::PMTTimingCorrections` service, and the
+ *    average delay, depending on the run, was measured to be around 265 ns
+ *    for ICARUS Run2.
+ * 
+ * Combining this information should give an appropriate shift to the gate.
+ * For example, assuming that the neutrino excess starts 125 ns from the first
+ * (cosmic ray) trigger in data, which is how ICARUS Run2 BNB gate was tuned,
+ * the beam gate starting point should be the start of simulation time (`0`)
+ * plus the three delays described above (300 ns in total) and minus the desired
+ * "porch" in the gate before the neutrinos: 175 ns.
+ * One way to adjust the gates is to create a `sim::BeamGateInfo` data product
+ * using the module `icarus::trigger::FixBeamGateInfo`. Note that some beam
+ * gates already provide a "porch"; their start time can be overridden to the
+ * desired value, or offset compensating for the existing porch.
  * 
  * 
  * Trigger logic algorithm
@@ -480,6 +562,8 @@ namespace icarus::trigger { class TriggerSimulationOnGates; }
  * and they match one-to-one. Configuration parameters `EmitEmpty` and
  * `DeadTime` may cause that correspondence to be broken.
  * 
+ * Note that the actual gate the trigger is evaluated at is shifted with respect
+ * to the "beam gate" by the trigger input delay.
  * 
  * 
  * Technical aspects of the module
@@ -603,9 +687,15 @@ class icarus::trigger::TriggerSimulationOnGates
       std::numeric_limits<nanoseconds>::max()
       };
     
-    fhicl::Atom<nanoseconds> TriggerDelay {
-      Name("TriggerDelay"),
-      Comment("trigger response delay, added to the trigger times"),
+    fhicl::Atom<nanoseconds> TriggerInputDelay {
+      Name("TriggerInputDelay"),
+      Comment("delay on trigger input, shifting the evaluation gate"),
+      0_ns // default
+      };
+    
+    fhicl::Atom<nanoseconds> TriggerOutputDelay {
+      Name("TriggerOutputDelay"),
+      Comment("trigger tagging delay, added to the trigger times"),
       0_ns // default
       };
     
@@ -765,7 +855,8 @@ class icarus::trigger::TriggerSimulationOnGates
   
   nanoseconds const fDeadTime; ///< Veto time after a trigger in a gate.
   
-  nanoseconds const fTriggerDelay; ///< Time to be added to the trigger time.
+  nanoseconds const fTriggerInputDelay; ///< Delay of input w.r.t. beam gate.
+  nanoseconds const fTriggerOutputDelay; ///< Delay of trigger evaluation.
   
   nanoseconds const fLVDSstatusDelay; ///< Delay to freeze LVDS state bits.
   
@@ -830,6 +921,8 @@ class icarus::trigger::TriggerSimulationOnGates
   std::vector<std::atomic<unsigned int>> fTriggerCount;
   std::atomic<unsigned int> fTotalGates { 0U }; ///< Count of opened gates.
   
+  // for convenience
+  static util::StandardSelectorFor<util::TimeScale> const TimeScaleSelector;
   
   // --- END Internal variables ------------------------------------------------
   
@@ -898,7 +991,20 @@ class icarus::trigger::TriggerSimulationOnGates
     unsigned int firstTriggerNumber
     );
   
-  /// Returns all the triggers from `gates` within the `beamGate`.
+  /**
+   * @brief Returns all the triggers from `gates` within the `beamGate`.
+   * @param beamGate the gate where to look for trigger
+   * @param gates the trigger gates from all the windows needed in the pattern
+   * @param detTimings detector timings helper
+   * @return information about all the triggers found
+   * 
+   * The `beamGate` is interpreted according to the configured beam gate
+   * reference time scale.
+   * Each trigger is filled as described in `findFirstTrigger()`. In particular,
+   * the trigger tick is the tick when the requirements where met, and because
+   * of the trigger input delay it can be earlier than the beam gate opening
+   * time.
+   */
   std::vector<WindowTriggerInfo_t> findTriggers(
     sim::BeamGateInfo const& beamGate,
     icarus::trigger::SlidingWindowPatternAlg::TriggerGates_t const& gates,
@@ -912,6 +1018,10 @@ class icarus::trigger::TriggerSimulationOnGates
    * @param gates the trigger gates from all the windows needed in the pattern
    * @param detTimings detector timings helper
    * @return information about the first time trigger requirements were met
+   * 
+   * The time of the trigger is specified as optical tick on the (discriminated)
+   * waveform where the requirement was met: it does not include any additional
+   * delay.
    */
   WindowTriggerInfo_t findFirstTrigger(
     optical_tick start, optical_tick stop,
@@ -1114,6 +1224,11 @@ namespace {
 //------------------------------------------------------------------------------
 //---  icarus::trigger::TriggerSimulationOnGates
 //------------------------------------------------------------------------------
+util::StandardSelectorFor<util::TimeScale> const
+icarus::trigger::TriggerSimulationOnGates::TimeScaleSelector;
+
+
+//------------------------------------------------------------------------------
 icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
   (Parameters const& config)
   : art::EDProducer       (config)
@@ -1127,7 +1242,8 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
   , fBeamGateTimestampFrom(config().BeamGateTimestampFrom())
   , fTriggerOnTransition  (config().TriggerOnTransition())
   , fDeadTime             (config().DeadTime())
-  , fTriggerDelay         (config().TriggerDelay())
+  , fTriggerInputDelay    (config().TriggerInputDelay())
+  , fTriggerOutputDelay   (config().TriggerOutputDelay())
   , fLVDSstatusDelay      (config().LVDSstatusDelay())
   , fRetriggeringMask     (bitMask<TriggerBits_t>(config().RetriggeringBit()))
   , fCryostatZeroMask     (bitMask<TriggerBits_t>(config().CryostatFirstBit()))
@@ -1261,10 +1377,12 @@ icarus::trigger::TriggerSimulationOnGates::TriggerSimulationOnGates
     log << "\nOther parameters:"
       << "\n * LVDS requirements for the trigger: " << fPattern.description()
       << "\n * trigger time resolution: " << fTriggerTimeResolution
-      << "\n * trigger response delay: " << fTriggerDelay
+      << "\n * delay of input LVDS to the trigger logic: " << fTriggerInputDelay
+      << "\n * delay from trigger evaluation to timestamping: "
+        << fTriggerOutputDelay
       << "\n * input beam gate: '" << fBeamGateTag.encode()
-        << "', reference time: " << util::StandardSelectorFor<util::TimeScale>{}
-          .get(fBeamGateReference).name()
+        << "', reference time: "
+        << TimeScaleSelector.get(fBeamGateReference).name()
       << "\n * emit triggers"
         << (fTriggerOnTransition
         ? " at the instant requirements become satisfied"
@@ -1367,7 +1485,8 @@ void icarus::trigger::TriggerSimulationOnGates::produce(art::Event& event)
     mf::LogDebug log(fLogCategory);
     log << "Trigger simulation for " << beamGates.size() << " gates";
     if (!beamGates.empty()) {
-      log << " ('" << fBeamGateTag.encode() << "'):";
+      log << " ('" << fBeamGateTag.encode() << "') in "
+        << TimeScaleSelector.get(fBeamGateReference).name() << " time scale:";
       for (auto const& [iGate, gate]: util::enumerate(beamGates)) {
         log << "\n [" << iGate << "]  from " << gate.Start() << " to "
           << (gate.Start() + gate.Width()) << " ns (" << gate.Width() << "ns)";
@@ -1902,8 +2021,7 @@ auto icarus::trigger::TriggerSimulationOnGates::toElectronicsTime(
     default:
       throw art::Exception{ art::errors::Configuration }
         << "Conversion of times from reference '"
-        << util::StandardSelectorFor<util::TimeScale>{}
-          .get(fBeamGateReference).name()
+        << TimeScaleSelector.get(fBeamGateReference).name()
         << "' not supported.\n";
   } // switch
   
@@ -1969,7 +2087,7 @@ auto icarus::trigger::TriggerSimulationOnGates::extractEventInfo
     
     eventInfo.absTime = extraInfo.triggerTimestamp;
     log
-      <<   "From trigger data product ('" << fBeamGateTimestampFrom.encode()
+      << "\nFrom trigger data product ('" << fBeamGateTimestampFrom.encode()
         << "')"
       << "\n  event time:      " << timestampToStr(eventInfo.absTime)
         << " [used]"
@@ -2040,12 +2158,18 @@ auto icarus::trigger::TriggerSimulationOnGates::findTriggers(
   std::vector<WindowTriggerInfo_t> triggerInfos;
     
   // relative to the beam gate time (also simulation time for MC);
-  optical_tick start = detTimings.toOpticalTick(
-    toElectronicsTime
-      (util::quantities::nanosecond{ beamGate.Start() }, detTimings)
-    );
+  // because the LVDS input arrives late, when we open the gate we still see
+  // older input; so we point our algorithm toward the past
+  electronics_time const startTime = toElectronicsTime
+    (util::quantities::nanosecond{ beamGate.Start() }, detTimings);
+  optical_tick start = detTimings.toOpticalTick(startTime - fTriggerInputDelay);
   optical_tick const stop = start + detTimings.toOpticalTicks
     (util::quantities::nanosecond{ beamGate.Width() });
+  
+  mf::LogTrace(fLogCategory)
+    << "Looking for a trigger between ticks " << start << " and " << stop
+    << " (from gate start " << startTime << " [electronics time] including a "
+    << fTriggerInputDelay << " delay on input)";
   
   // we want to start a tick earlier, to see if a trigger is already there:
   if (fTriggerOnTransition) start -= optical_time_ticks{ 1 };
@@ -2062,6 +2186,11 @@ auto icarus::trigger::TriggerSimulationOnGates::findTriggers(
       // need to look for another one
       // shouldn't happen after the first trigger:
       assert(triggerInfos.empty());
+      mf::LogTrace(fLogCategory)
+        << "Suppressed a trigger at gate start (optical tick "
+        << triggerInfo.info.atTick() << ", " << start
+        << ") from window #" << triggerInfo.extra.windowIndex;
+      
       start = triggerInfo.info.endTick();
       triggerInfo = nextTrigger(start, stop);
       if (!triggerInfo) break;
@@ -2120,7 +2249,7 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
 ) const {
   
   // scale is always the current electronics time (from DetectorClocks)
-  electronics_time const beamTime
+  electronics_time const gateTime
     = detTimings.BeamGateTime() + nanoseconds{ beamGate.Start() };
   TriggerBits_t const beamBits
     = fBeamBits.value_or(makeTriggerBits(beamGate));
@@ -2134,19 +2263,26 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
   extraInfo.sourceType  = beamTypeToTriggerSource(beamGate.BeamType());
   extraInfo.gateID      = eventInfo.event;
   extraInfo.gateCount   = eventInfo.event;
-  extraInfo.beamGateTimestamp = electronicsTimeToTimestamp(beamTime, eventInfo);
+  extraInfo.beamGateTimestamp = electronicsTimeToTimestamp(gateTime, eventInfo);
   
   TriggerBits_t retriggerMask { 0 };
   bool fillExtraInfo = fExtraInfo;
   for (WindowTriggerInfo_t const& trInfo: info) {
     
     if (trInfo.info.fired()) { // trigger fired
+      // trigger time points to the PMT waveform optical tick when trigger
+      // requirements were met: to compare with the beam gate, the input delay
+      // must be added (in fact, because of trigger input delay the trigger tick
+      // may be earlier than the beam gate opening time), and to obtain a
+      // timestamp, the output delay must be added too.
       electronics_time const triggerTime
         = detTimings.toElectronicsTime(trInfo.info.atTick());
-      
-      // include the delay from timestamping (and all other fixed delays)
+      electronics_time const triggerFireTime = triggerTime + fTriggerInputDelay;
       electronics_time const timestampedTriggerTime
-        = triggerTime + fTriggerDelay;
+        = triggerFireTime + fTriggerOutputDelay;
+      mf::LogTrace(fLogCategory)
+        << "Requirements met at " << triggerTime << ", trigger fired at "
+        << triggerFireTime << " and timestamped at " << timestampedTriggerTime;
       
       // find the location and set the bits accordingly
       geo::CryostatID const triggeringCryo
@@ -2157,7 +2293,7 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
       triggers.emplace_back(
         triggerNumber,                         // counter
         double(timestampedTriggerTime),        // trigger time
-        double(beamTime),                      // beam gate
+        double(gateTime),                      // beam gate
         beamBits | retriggerMask | sourceMask  // bits
         );
       
@@ -2178,7 +2314,8 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
                 = extraInfo.cryostats[side];
               cryoInfo.triggerLogicBits
                 = mask(sbn::bits::triggerLogic::PMTPairMajority);
-              cryoInfo.beamToTrigger = beamToTrigger.value();
+              cryoInfo.beamToTrigger
+                = static_cast<unsigned int>(beamToTrigger.value());
             };
           
           extraInfo.triggerTimestamp
@@ -2189,7 +2326,8 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
           
           extraInfo.triggerLocationBits = triggerLocationBits;
           
-          nanoseconds const beamToTrigger = triggerTime - beamTime;
+          // include the input delay only
+          nanoseconds const beamToTrigger = triggerFireTime - gateTime;
           
           if (triggerLocationBits & mask(sbn::bits::triggerLocation::CryoEast))
             setCryoTrigger(sbn::ExtraTriggerInfo::EastCryostat, beamToTrigger);
@@ -2199,11 +2337,11 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
           if (fSaveLVDSbits) {
             assert(PMTpairGates);
             optical_tick const LVDSfreezeTick
-              = detTimings.toOpticalTick(triggerTime + fLVDSstatusDelay);
+              = detTimings.toOpticalTick(triggerFireTime + fLVDSstatusDelay);
             mf::LogTrace(fLogCategory) << "Freezing LVDS states at tick "
-              << LVDSfreezeTick << " (" << triggerTime << " trigger + "
+              << LVDSfreezeTick << " (" << triggerFireTime << " trigger + "
               << fLVDSstatusDelay << " delay = "
-              << (triggerTime + fLVDSstatusDelay) << ")";
+              << (triggerFireTime + fLVDSstatusDelay) << ")";
             LVDSbitArrays_t const LVDSbits
               = extractLVDSstatus(LVDSfreezeTick, *PMTpairGates);
             for (std::size_t const cryo
@@ -2243,7 +2381,7 @@ icarus::trigger::TriggerSimulationOnGates::triggerInfoToTriggerData(
     triggers.emplace_back(
       triggerNumber,                          // counter
       std::numeric_limits<double>::lowest(),  // trigger time
-      double(beamTime),                   // beam gate in electronics time scale
+      double(gateTime),                   // beam gate in electronics time scale
       0                                       // bits
       );
     
