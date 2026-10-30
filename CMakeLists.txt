@@ -43,8 +43,10 @@ cet_report_compiler_flags(REPORT_THRESHOLD VERBOSE)
 
 find_package(nufinder REQUIRED ) # necessary for CMake to include sbncode
 
+# in addition to the ones already EXPORTed by icarusalg
+# (CLHEP/ROOT/GSL, CET/canvas, nutools/LArSoft/SBN data and algorithms)
+
 find_package(Boost COMPONENTS system program_options REQUIRED)
-find_package(Microsoft.GSL HINTS $ENV{GUIDELINE_SL_DIR} REQUIRED EXPORT)
 find_package(FFTW3 REQUIRED )
 find_package(FFTW3f REQUIRED )
 find_package(FFTW3q REQUIRED )
@@ -52,14 +54,11 @@ find_package(FFTW3l REQUIRED )
 find_package(Range-v3 REQUIRED )
 find_package(Eigen3 REQUIRED )
 find_package(SQLite3 REQUIRED )
-find_package(ROOT REQUIRED )
 find_package(hep_concurrency REQUIRED )
 find_package(TorchScatter REQUIRED )
 
 find_package(libwda REQUIRED )
 find_package(ifdhc REQUIRED )
-
-find_package(canvas REQUIRED )
 find_package(art REQUIRED )
 find_package(art_root_io REQUIRED )
 find_package(messagefacility REQUIRED )
@@ -67,14 +66,9 @@ find_package(ifdh_art REQUIRED )
 
 find_package(artdaq_core REQUIRED )
 
-find_package(nusimdata REQUIRED )
 find_package(nurandom REQUIRED )
 find_package(nug4 REQUIRED )
 
-find_package(larcoreobj REQUIRED )
-find_package(lardataobj REQUIRED )
-find_package(larcorealg REQUIRED )
-find_package(lardataalg REQUIRED )
 find_package(larcore REQUIRED )
 find_package(lardata REQUIRED )
 find_package(larsim REQUIRED )
