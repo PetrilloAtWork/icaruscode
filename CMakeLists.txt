@@ -51,20 +51,20 @@ find_package(FFTW3q REQUIRED )
 find_package(FFTW3l REQUIRED )
 find_package(Range-v3 REQUIRED )
 find_package(Eigen3 REQUIRED )
-find_package(PostgreSQL REQUIRED )
 find_package(SQLite3 REQUIRED )
 find_package(ROOT REQUIRED )
+find_package(hep_concurrency REQUIRED )
+find_package(TorchScatter REQUIRED )
 
 find_package(libwda REQUIRED )
-find_package(ifbeam REQUIRED )
 find_package(ifdhc REQUIRED )
 
 find_package(canvas REQUIRED )
 find_package(art REQUIRED )
+find_package(art_root_io REQUIRED )
 find_package(messagefacility REQUIRED )
 find_package(ifdh_art REQUIRED )
 
-find_package(TRACE REQUIRED )
 find_package(artdaq_core REQUIRED )
 
 find_package(nusimdata REQUIRED )
@@ -82,9 +82,6 @@ find_package(larevt REQUIRED )
 find_package(larreco REQUIRED )
 find_package(larrecodnn REQUIRED )
 find_package(larana REQUIRED )
-
-find_package(PandoraSDK REQUIRED )
-find_package(PandoraMonitoring REQUIRED )
 find_package(larpandoracontent REQUIRED )
 find_package(larpandora REQUIRED )
 
@@ -92,10 +89,11 @@ find_package(sbnobj REQUIRED )
 find_package(sbnalg REQUIRED )
 find_package(sbndaq_artdaq_core REQUIRED )
 find_package(sbncode REQUIRED )
-find_package(icarus_data REQUIRED )
+
+find_package(WireCell)
+
 find_package(icarusalg REQUIRED )
 find_package(icarus_signal_processing REQUIRED )
-find_package(icarusutil REQUIRED )
 
 # macros for dictionary and simple_plugin
 include(ArtDictionary)
