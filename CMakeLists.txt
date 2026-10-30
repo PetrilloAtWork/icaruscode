@@ -41,6 +41,8 @@ cet_set_compiler_flags(DIAGS CAUTIOUS
 
 cet_report_compiler_flags(REPORT_THRESHOLD VERBOSE)
 
+find_package(nufinder REQUIRED ) # necessary for CMake to include sbncode
+
 #these are minimum required versions,not thea ctual product versions
 find_package(libwda REQUIRED )
 find_package(PostgreSQL REQUIRED )
